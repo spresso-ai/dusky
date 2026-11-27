@@ -33,6 +33,8 @@
 #include "d/d_com_inf_game.h"
 #include "d/d_item_data.h"
 #include "d/d_kankyo.h"
+#include "d/d_com_inf_actor.h"
+#include "m_Do/m_Do_controller_pad.h"
 #include "f_op/f_op_actor_mng.h"
 #include "mods/service.hpp"
 #include "mods/svc/camera.h"
@@ -79,6 +81,8 @@ IMPORT_SERVICE(HookService, svc_hook);
 DEFINE_HOOK(&dScnKy_env_light_c::setLight, EnvSetLight);
 // daGrass_create staat in de methodetabel van de gras-actor en wordt dus nooit ge-inlined.
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_grass.cpp#daGrass_create", int(daGrass_c*), GrassCreate);
+class dMeter2_c;
+DEFINE_HOOK_SYMBOL("src/d/d_meter2.cpp#dMeter2_Draw", int(dMeter2_c*), MeterDraw);
 
 namespace {
 
@@ -267,6 +271,15 @@ ConfigVarHandle g_cvarRaysDebug = 0;
 ConfigVarHandle g_cvarParticlesEnabled = 0;
 ConfigVarHandle g_cvarParticleAmount = 0;
 ConfigVarHandle g_cvarParticleBrightness = 0;
+ConfigVarHandle g_cvarAreaEnabled = 0;
+ConfigVarHandle g_cvarAreaAmount = 0;
+ConfigVarHandle g_cvarAreaIntensity = 0;
+ConfigVarHandle g_cvarPhoto = 0;
+ConfigVarHandle g_cvarPhotoFreeze = 0;
+ConfigVarHandle g_cvarPhotoHud = 0;
+ConfigVarHandle g_cvarPhotoSpeed = 0;
+ConfigVarHandle g_cvarPhotoFov = 0;
+ConfigVarHandle g_cvarPhotoHour = 0;
 ConfigVarHandle g_cvarGrassEnabled = 0;
 ConfigVarHandle g_cvarGrassDensity = 0;
 ConfigVarHandle g_cvarFlowerDensity = 0;
@@ -770,11 +783,13 @@ GfxDrawTypeHandle g_gradeDrawType = 0;
 GfxDrawTypeHandle g_fogDrawType = 0;
 GfxDrawTypeHandle g_raysDrawType = 0;
 GfxDrawTypeHandle g_particlesDrawType = 0;
+GfxDrawTypeHandle g_areaDrawType = 0;
+ResourceBuffer g_areaSource = RESOURCE_BUFFER_INIT;
 GfxComputeTypeHandle g_raysComputeType = 0;
 GfxStageHookHandle g_beforeHudHook = 0;
 GfxStageHookHandle g_afterOpaqueHook = 0;
 
-enum class Blend { Replace, Alpha, Additive };
+enum class Blend { Replace, Alpha, Additive, Premultiplied };
 
 struct PipelineSlot {
     WGPURenderPipeline pipeline = nullptr;
@@ -813,6 +828,9 @@ struct Diag {
     bool fog = false;
     const char* rays = "-";
     uint32_t particles = 0;
+    const char* area = "-";
+    uint32_t areaCount = 0;
+    bool photo = false;
     bool bloom = false;
     bool aa = false;
     bool grade = false;
@@ -823,6 +841,7 @@ float g_sunElevation = 1.0f;
 PipelineSlot g_fogPipeline;
 PipelineSlot g_raysPipeline;
 PipelineSlot g_particlesPipeline;
+PipelineSlot g_areaPipeline;
 WGPUComputePipeline g_raysComputePipeline = nullptr;
 WGPUBindGroupLayout g_raysComputeLayout = nullptr;
 
@@ -978,6 +997,23 @@ struct ParticleUniforms {
 };
 static_assert(sizeof(ParticleUniforms) == 176);
 
+struct AreaParticleUniforms {
+    float proj_from_world[16];
+    float cam_right[3];
+    float time;
+    float cam_up[3];
+    float count;
+    float eye[3];
+    float kind;
+    float light[3];
+    float box;
+    float wind[3];
+    float size;
+    float sun_dir[3];
+    float intensity;
+};
+static_assert(sizeof(AreaParticleUniforms) == 160);
+
 struct DrawPayload {
     WGPUTextureView view;  // snapshot of textuur van dit frame (mag null zijn voor deeltjes)
     WGPUTextureView view2; // tweede textuur (diepte voor de kleurpass), of null
@@ -1051,7 +1087,16 @@ bool ensure_pipeline(PipelineSlot& slot, const GfxRenderTargetLayout& target, co
             .srcFactor = WGPUBlendFactor_Zero,
             .dstFactor = WGPUBlendFactor_One},
     };
-    const WGPUBlendState* blend = blendMode == Blend::Alpha    ? &alphaBlend :
+    const WGPUBlendState premulBlend{
+        .color = {.operation = WGPUBlendOperation_Add,
+            .srcFactor = WGPUBlendFactor_One,
+            .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha},
+        .alpha = {.operation = WGPUBlendOperation_Add,
+            .srcFactor = WGPUBlendFactor_Zero,
+            .dstFactor = WGPUBlendFactor_One},
+    };
+    const WGPUBlendState* blend = blendMode == Blend::Premultiplied ? &premulBlend :
+                                  blendMode == Blend::Alpha    ? &alphaBlend :
                                   blendMode == Blend::Additive ? &additiveBlend :
                                                                  nullptr;
     WGPUColorTargetState colorTargets[GFX_MAX_COLOR_ATTACHMENTS];
@@ -1331,6 +1376,18 @@ void on_particles_draw(
     {
         data.view = nullptr;
         draw_with(ctx, g_particlesPipeline, data, 6, data.instance_count);
+    }
+}
+
+void on_area_draw(
+    ModContext*, const GfxDrawContext* ctx, const void* payload, size_t size, void*) {
+    DrawPayload data;
+    if (read_payload(payload, size, data) && data.instance_count > 0 &&
+        ensure_pipeline(g_areaPipeline, ctx->layout, "Sfeerpakket area particles", g_areaSource,
+            Blend::Premultiplied, true))
+    {
+        data.view = nullptr;
+        draw_with(ctx, g_areaPipeline, data, 6, data.instance_count);
     }
 }
 
@@ -1715,6 +1772,97 @@ void push_particles(const CameraInfo& camera, const SunState& sun) {
     }
 }
 
+// Deeltjes per gebied: soort, aantal, blokgrootte, grootte en wind.
+struct AreaKind {
+    int kind;
+    const char* name;
+    float count;
+    float box;
+    float size;
+    float wind[3];
+    bool outdoorOnly;
+};
+constexpr AreaKind kAreaLeaves{1, "bladeren", 550, 1600, 7.5f, {22, 0, 12}, true};
+constexpr AreaKind kAreaPetals{2, "bloemblaadjes", 380, 1600, 5.0f, {40, 0, 25}, true};
+constexpr AreaKind kAreaPetalsField{2, "bloemblaadjes", 220, 2000, 5.0f, {70, 0, 40}, true};
+constexpr AreaKind kAreaEmbers{3, "vonken", 650, 1400, 5.0f, {14, 0, 8}, false};
+constexpr AreaKind kAreaSnow{4, "sneeuw", 2600, 1500, 3.5f, {70, 0, 35}, true};
+constexpr AreaKind kAreaSand{5, "zand", 1600, 2000, 3.0f, {260, 0, 120}, true};
+constexpr AreaKind kAreaTwilight{6, "schemer", 450, 1800, 6.5f, {0, 0, 0}, false};
+
+const AreaKind* pick_area_kind() {
+    if (dKy_darkworld_check() != 0) {
+        return &kAreaTwilight;
+    }
+    const char* stage = dComIfGp_getStartStageName();
+    if (stage == nullptr || stage[0] == '\0') {
+        return nullptr;
+    }
+    auto is = [&](const char* name) { return std::strncmp(stage, name, 8) == 0; };
+    const AreaKind* k = nullptr;
+    if (is("F_SP108") || is("F_SP117")) k = &kAreaLeaves;
+    else if (is("F_SP103") || is("F_SP00") || is("F_SP104")) k = &kAreaPetals;
+    else if (is("F_SP121") || is("F_SP122")) k = &kAreaPetalsField;
+    else if (is("F_SP110") || is("D_MN04") || is("R_SP110")) k = &kAreaEmbers;
+    else if (is("F_SP114")) k = &kAreaSnow;
+    else if (is("F_SP124")) k = &kAreaSand;
+    if (k != nullptr && k->outdoorOnly) {
+        dStage_stageDt_c* stageDt = dComIfGp_getStage();
+        if (stageDt == nullptr || stageDt->getStagInfo() == nullptr || !dKy_Outdoor_check()) {
+            return nullptr;
+        }
+    }
+    return k;
+}
+
+void push_area_particles(const CameraInfo& camera, const SunState& sun, dScnKy_env_light_c* env) {
+    const AreaKind* k = pick_area_kind();
+    if (k == nullptr) {
+        return;
+    }
+    const float amount = get_percent(g_cvarAreaAmount, 100, 300);
+    const uint32_t n = static_cast<uint32_t>(std::clamp(k->count * amount, 0.0f, 6000.0f));
+    if (n == 0) {
+        return;
+    }
+    AreaParticleUniforms u{};
+    std::memcpy(u.proj_from_world, camera.proj_from_world, sizeof(u.proj_from_world));
+    const float* v = camera.view_from_world;
+    u.cam_right[0] = v[0];
+    u.cam_right[1] = v[4];
+    u.cam_right[2] = v[8];
+    u.cam_up[0] = v[1];
+    u.cam_up[1] = v[5];
+    u.cam_up[2] = v[9];
+    std::memcpy(u.eye, camera.eye, sizeof(u.eye));
+    u.time = std::fmod(
+        std::chrono::duration<float>(std::chrono::steady_clock::now() - g_startTime).count(),
+        3600.0f);
+    u.count = static_cast<float>(n);
+    u.kind = static_cast<float>(k->kind);
+    // Licht in beeldruimte: omgevingslicht van de game plus een deel zonlicht.
+    const GXColorS10& amb = env->actor_amb_col;
+    const float ambC[3] = {amb.r / 255.0f, amb.g / 255.0f, amb.b / 255.0f};
+    for (int i = 0; i < 3; ++i) {
+        u.light[i] = std::clamp(ambC[i] * 0.9f + linear_to_display(sun.color[i]) * 0.55f, 0.08f, 1.4f);
+    }
+    u.box = k->box;
+    std::memcpy(u.wind, k->wind, sizeof(u.wind));
+    u.size = k->size;
+    std::memcpy(u.sun_dir, sun.dir, sizeof(u.sun_dir));
+    u.intensity = get_percent(g_cvarAreaIntensity, 100, 300);
+
+    GfxRange range{0, 0};
+    if (svc_gfx->push_uniform(mod_ctx, &u, sizeof(u), &range) != MOD_OK) {
+        return;
+    }
+    const DrawPayload payload{nullptr, nullptr, nullptr, range.offset, range.size, n};
+    if (svc_gfx->push_draw(mod_ctx, g_areaDrawType, &payload, sizeof(payload)) == MOD_OK) {
+        g_diag.area = k->name;
+        g_diag.areaCount = n;
+    }
+}
+
 // Zonpositie op het scherm voor de lens-effecten in de kleurpass.
 void update_screen_sun(const CameraInfo& camera, const SunState& sun) {
     g_sunElevation = sun.isNight ? 1.0f : std::max(sun.dir[1], 0.0f);
@@ -1751,10 +1899,13 @@ void on_scene_after_opaque(ModContext*, const GfxStageContext* stageCtx, void*) 
     g_diag.rays = "-";
     g_diag.particles = 0;
     g_diag.depth = false;
+    g_diag.area = "-";
+    g_diag.areaCount = 0;
     const bool fogOn = get_bool(g_cvarFogEnabled, true);
     const bool raysOn = get_bool(g_cvarRaysEnabled, true);
     const bool particlesOn = get_bool(g_cvarParticlesEnabled, true);
-    if ((!fogOn && !raysOn && !particlesOn) || stageCtx == nullptr ||
+    const bool areaOn = get_bool(g_cvarAreaEnabled, true);
+    if ((!fogOn && !raysOn && !particlesOn && !areaOn) || stageCtx == nullptr ||
         stageCtx->struct_size < sizeof(GfxStageContext) || stageCtx->game_view == nullptr)
     {
         return;
@@ -1794,6 +1945,152 @@ void on_scene_after_opaque(ModContext*, const GfxStageContext* stageCtx, void*) 
     if (particlesOn) {
         push_particles(camera, sun);
     }
+    if (areaOn) {
+        push_area_particles(camera, sun, env);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fotomodus: vrije camera, wereld bevroren, HUD weg. P schakelt, of via het paneel.
+// ---------------------------------------------------------------------------------------------
+
+using SdlKeyboardStateFn = const bool* (*)(int*);
+using SdlMouseStateFn = uint32_t (*)(float*, float*);
+SdlKeyboardStateFn g_sdlKeys = nullptr;
+SdlMouseStateFn g_sdlMouse = nullptr;
+CameraOperatorHandle g_photoOperator = 0;
+
+struct PhotoState {
+    bool active = false;
+    bool frozeWorld = false;
+    bool keyWasDown = false;
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+    float eye[3] = {0, 0, 0};
+    float lastMouse[2] = {-1.0f, -1.0f};
+};
+PhotoState g_photo;
+
+constexpr int kScP = 19, kScW = 26, kScA = 4, kScS = 22, kScD = 7, kScSpace = 44, kScLCtrl = 224,
+              kScLShift = 225, kScQ = 20, kScE = 8;
+
+bool key_down(const bool* keys, int numKeys, int sc) {
+    return keys != nullptr && sc < numKeys && keys[sc];
+}
+
+void photo_set_freeze(bool freeze) {
+    if (freeze && !g_photo.frozeWorld && !g_dComIfAc_gameInfo.mPause) {
+        g_dComIfAc_gameInfo.mPause = true;
+        g_photo.frozeWorld = true;
+    } else if (!freeze && g_photo.frozeWorld) {
+        g_dComIfAc_gameInfo.mPause = false;
+        g_photo.frozeWorld = false;
+    }
+}
+
+void photo_leave() {
+    photo_set_freeze(false);
+    g_photo.active = false;
+    g_photo.lastMouse[0] = g_photo.lastMouse[1] = -1.0f;
+}
+
+bool photo_operate(ModContext*, CameraOperatorState* st, void*) {
+    int numKeys = 0;
+    const bool* keys = g_sdlKeys != nullptr ? g_sdlKeys(&numKeys) : nullptr;
+
+    // P schakelt de fotomodus (op de flank, niet zolang je hem vasthoudt).
+    const bool pDown = key_down(keys, numKeys, kScP);
+    if (pDown && !g_photo.keyWasDown) {
+        svc_config->set_bool(mod_ctx, g_cvarPhoto, !get_bool(g_cvarPhoto, false));
+    }
+    g_photo.keyWasDown = pDown;
+
+    const bool want = get_bool(g_cvarPhoto, false);
+    if (!want) {
+        if (g_photo.active) {
+            photo_leave();
+        }
+        g_diag.photo = false;
+        return false;
+    }
+    if (!g_photo.active) {
+        g_photo.active = true;
+        std::memcpy(g_photo.eye, st->eye, sizeof(g_photo.eye));
+        const float dx = st->center[0] - st->eye[0];
+        const float dy = st->center[1] - st->eye[1];
+        const float dz = st->center[2] - st->eye[2];
+        g_photo.yaw = std::atan2(dz, dx);
+        g_photo.pitch = std::atan2(dy, std::sqrt(dx * dx + dz * dz));
+    }
+    g_diag.photo = true;
+    photo_set_freeze(get_bool(g_cvarPhotoFreeze, true));
+
+    float fwd = 0, side = 0, up = 0, lookX = 0, lookY = 0;
+    bool fast = false;
+    if (keys != nullptr) {
+        fwd = (key_down(keys, numKeys, kScW) ? 1.f : 0.f) - (key_down(keys, numKeys, kScS) ? 1.f : 0.f);
+        side = (key_down(keys, numKeys, kScD) ? 1.f : 0.f) - (key_down(keys, numKeys, kScA) ? 1.f : 0.f);
+        up = (key_down(keys, numKeys, kScSpace) || key_down(keys, numKeys, kScE) ? 1.f : 0.f) -
+             (key_down(keys, numKeys, kScLCtrl) || key_down(keys, numKeys, kScQ) ? 1.f : 0.f);
+        fast = key_down(keys, numKeys, kScLShift);
+    } else {
+        interface_of_controller_pad& pad = mDoCPd_c::getCpadInfo(0);
+        fwd = pad.mMainStickPosY;
+        side = pad.mMainStickPosX;
+        up = pad.mTriggerRight - pad.mTriggerLeft;
+    }
+    // Kijken: pijltjes / C-stick altijd, muis met rechterknop ingedrukt.
+    interface_of_controller_pad& pad = mDoCPd_c::getCpadInfo(0);
+    lookX = pad.mCStickPosX * 0.045f;
+    lookY = pad.mCStickPosY * 0.035f;
+    if (g_sdlMouse != nullptr) {
+        float mx = 0, my = 0;
+        const uint32_t buttons = g_sdlMouse(&mx, &my);
+        if ((buttons & (1u << 2)) != 0 || (buttons & 1u) != 0) {
+            if (g_photo.lastMouse[0] >= 0.0f) {
+                lookX += (mx - g_photo.lastMouse[0]) * 0.004f;
+                lookY -= (my - g_photo.lastMouse[1]) * 0.004f;
+            }
+            g_photo.lastMouse[0] = mx;
+            g_photo.lastMouse[1] = my;
+        } else {
+            g_photo.lastMouse[0] = g_photo.lastMouse[1] = -1.0f;
+        }
+    }
+    g_photo.yaw += lookX;
+    g_photo.pitch = std::clamp(g_photo.pitch + lookY, -1.45f, 1.45f);
+
+    const float speed = 14.0f * get_percent(g_cvarPhotoSpeed, 100, 500) * (fast ? 4.0f : 1.0f);
+    const float cy = std::cos(g_photo.yaw), sy = std::sin(g_photo.yaw);
+    const float cp = std::cos(g_photo.pitch), sp = std::sin(g_photo.pitch);
+    g_photo.eye[0] += speed * (fwd * cy * cp - side * sy);
+    g_photo.eye[1] += speed * (fwd * sp + up);
+    g_photo.eye[2] += speed * (fwd * sy * cp + side * cy);
+
+    std::memcpy(st->eye, g_photo.eye, sizeof(g_photo.eye));
+    st->center[0] = g_photo.eye[0] + cy * cp * 100.0f;
+    st->center[1] = g_photo.eye[1] + sp * 100.0f;
+    st->center[2] = g_photo.eye[2] + sy * cp * 100.0f;
+    st->bank_degrees = 0.0f;
+    const float fov = get_percent(g_cvarPhotoFov, 0, 120) * 100.0f;
+    if (fov >= 10.0f) {
+        st->fovy = fov;
+    }
+    const float hour = get_percent(g_cvarPhotoHour, 0, 24) * 100.0f;
+    if (hour >= 0.5f) {
+        dComIfGs_setTime(std::fmod(hour, 24.0f) * 15.0f);
+    }
+    return true;
+}
+
+HookAction on_meter_draw_pre(ModContext*, void*, void* retval, void*) {
+    if (g_photo.active && !get_bool(g_cvarPhotoHud, false)) {
+        if (retval != nullptr) {
+            *static_cast<int*>(retval) = 1;
+        }
+        return HOOK_SKIP_ORIGINAL;
+    }
+    return HOOK_CONTINUE;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1871,6 +2168,22 @@ ModResult build_panel(ModContext*, UiElementHandle panel, void*, ModError*) {
     add_number(panel, "Hoeveelheid", g_cvarParticleAmount, 0, 300, 10);
     add_number(panel, "Helderheid", g_cvarParticleBrightness, 0, 300, 10);
 
+    svc_ui->pane_add_section(mod_ctx, panel, "Deeltjes per gebied");
+    add_toggle(panel, "Aan (bladeren, bloemblaadjes, vonken, sneeuw, zand, schemer)", g_cvarAreaEnabled);
+    add_number(panel, "Hoeveelheid", g_cvarAreaAmount, 0, 300, 10);
+    add_number(panel, "Gloed en tegenlicht", g_cvarAreaIntensity, 0, 300, 10);
+
+    svc_ui->pane_add_section(mod_ctx, panel, "Fotomodus (toets P)");
+    add_toggle(panel, "Fotomodus aan", g_cvarPhoto);
+    add_toggle(panel, "Wereld bevriezen", g_cvarPhotoFreeze);
+    add_toggle(panel, "HUD tonen", g_cvarPhotoHud);
+    add_number(panel, "Vliegsnelheid", g_cvarPhotoSpeed, 10, 500, 10);
+    add_number(panel, "Beeldhoek (0 = normaal)", g_cvarPhotoFov, 0, 120, 5, "");
+    add_number(panel, "Tijdstip (0 = niet aanpassen)", g_cvarPhotoHour, 0, 24, 1, "");
+    svc_ui->pane_add_text(mod_ctx, panel,
+        "WASD vliegen, spatie/E omhoog, Ctrl/Q omlaag, Shift snel, muisknop ingedrukt of pijltjes om te kijken.",
+        nullptr);
+
     svc_ui->pane_add_section(mod_ctx, panel, "Gras en bloemen (na kamerwissel)");
     add_toggle(panel, "Aan", g_cvarGrassEnabled);
     add_number(panel, "Grasdichtheid", g_cvarGrassDensity, 100, 400, 25);
@@ -1904,9 +2217,10 @@ ModResult update_panel(ModContext*, void*, ModError*) {
     if (g_diagText != 0) {
         char text[320];
         std::snprintf(text, sizeof(text),
-            "Mist: %s | Stralen: %s | Deeltjes: %u | Gloed: %s | AA: %s | Kleur: %s | Diepte: %s",
-            g_diag.fog ? "aan" : "uit", g_diag.rays, g_diag.particles, g_diag.bloom ? "aan" : "uit",
-            g_diag.aa ? "aan" : "uit", g_diag.grade ? "aan" : "uit", g_diag.depth ? "ja" : "nee");
+            "Mist: %s | Stralen: %s | Deeltjes: %u + %s %u | Gloed: %s | AA: %s | Kleur: %s | Diepte: %s%s",
+            g_diag.fog ? "aan" : "uit", g_diag.rays, g_diag.particles, g_diag.area, g_diag.areaCount,
+            g_diag.bloom ? "aan" : "uit",
+            g_diag.aa ? "aan" : "uit", g_diag.grade ? "aan" : "uit", g_diag.depth ? "ja" : "nee", g_diag.photo ? " | FOTOMODUS" : "");
         svc_ui->elem_set_text(mod_ctx, g_diagText, text);
     }
     if (g_dumpText != 0) {
@@ -1986,6 +2300,15 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(register_bool("particlesEnabled", true, g_cvarParticlesEnabled, error));
     TRY(register_int("particleAmount", 100, g_cvarParticleAmount, error));
     TRY(register_int("particleBrightness", 100, g_cvarParticleBrightness, error));
+    TRY(register_bool("areaEnabled", true, g_cvarAreaEnabled, error));
+    TRY(register_int("areaAmount", 100, g_cvarAreaAmount, error));
+    TRY(register_int("areaIntensity", 100, g_cvarAreaIntensity, error));
+    TRY(register_bool("photoMode", false, g_cvarPhoto, error));
+    TRY(register_bool("photoFreeze", true, g_cvarPhotoFreeze, error));
+    TRY(register_bool("photoHud", false, g_cvarPhotoHud, error));
+    TRY(register_int("photoSpeed", 100, g_cvarPhotoSpeed, error));
+    TRY(register_int("photoFov", 0, g_cvarPhotoFov, error));
+    TRY(register_int("photoHour", 0, g_cvarPhotoHour, error));
     TRY(register_bool("grassEnabled", true, g_cvarGrassEnabled, error));
     TRY(register_int("grassDensity", 300, g_cvarGrassDensity, error));
     TRY(register_int("flowerDensity", 250, g_cvarFlowerDensity, error));
@@ -2012,6 +2335,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(load_shader("rays_compute.wgsl", g_raysComputeSource, error));
     TRY(load_shader("rays_composite.wgsl", g_raysCompositeSource, error));
     TRY(load_shader("particles.wgsl", g_particlesSource, error));
+    TRY(load_shader("area_particles.wgsl", g_areaSource, error));
     if (svc_gfx->get_device_info(mod_ctx, &g_deviceInfo) != MOD_OK) {
         return mods::set_error(error, MOD_ERROR, "kon GPU-info niet opvragen");
     }
@@ -2038,6 +2362,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(register_draw("Sfeerpakket fog", on_fog_draw, g_fogDrawType, error));
     TRY(register_draw("Sfeerpakket rays", on_rays_draw, g_raysDrawType, error));
     TRY(register_draw("Sfeerpakket particles", on_particles_draw, g_particlesDrawType, error));
+    TRY(register_draw("Sfeerpakket area particles", on_area_draw, g_areaDrawType, error));
 #undef TRY
 
     {
@@ -2081,6 +2406,26 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
         svc_log->warn(mod_ctx, "gras-hook niet beschikbaar; extra gras staat uit");
     }
 
+    if (mods::hook::add_pre<MeterDraw>(on_meter_draw_pre) != MOD_OK) {
+        svc_log->warn(mod_ctx, "HUD-hook niet beschikbaar; HUD blijft zichtbaar in fotomodus");
+    }
+    g_sdlKeys = reinterpret_cast<SdlKeyboardStateFn>(dlsym(RTLD_DEFAULT, "SDL_GetKeyboardState"));
+    g_sdlMouse = reinterpret_cast<SdlMouseStateFn>(dlsym(RTLD_DEFAULT, "SDL_GetMouseState"));
+    if (g_sdlKeys == nullptr) {
+        svc_log->warn(mod_ctx, "toetsenbord niet direct leesbaar; fotomodus via paneel en controller");
+    }
+    svc_config->set_bool(mod_ctx, g_cvarPhoto, false);
+    {
+        CameraOperatorDesc op = CAMERA_OPERATOR_DESC_INIT;
+        op.debug_name = "Sfeerpakket fotomodus";
+        op.priority = 100;
+        op.operate = photo_operate;
+        if (svc_camera->register_camera_operator == nullptr ||
+            svc_camera->register_camera_operator(mod_ctx, &op, &g_photoOperator) != MOD_OK)
+        {
+            svc_log->warn(mod_ctx, "camera-operator niet beschikbaar; fotomodus staat uit");
+        }
+    }
     svc_config->subscribe(mod_ctx, g_cvarTextureDump, on_texture_dump_changed, nullptr, nullptr);
     if (get_bool(g_cvarKeyboardDefaults, true)) {
         apply_keyboard_defaults();
@@ -2092,7 +2437,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     panel.update = update_panel;
     svc_ui->register_mods_panel(mod_ctx, &panel);
 
-    svc_log->info(mod_ctx, "Sfeerpakket 0.6 (ultiem) geladen");
+    svc_log->info(mod_ctx, "Sfeerpakket 0.7 geladen (gebiedsdeeltjes + fotomodus)");
     return MOD_OK;
 }
 
@@ -2126,6 +2471,13 @@ MOD_EXPORT ModResult mod_shutdown(ModError*) {
     }
     release_slot(g_gradePipeline);
     release_slot(g_fxaaPipeline);
+    photo_leave();
+    if (g_photoOperator != 0) {
+        svc_camera->unregister_camera_operator(mod_ctx, g_photoOperator);
+        g_photoOperator = 0;
+    }
+    release_slot(g_areaPipeline);
+    svc_resource->free(mod_ctx, &g_areaSource);
     if (g_bloomDownPipeline) wgpuComputePipelineRelease(g_bloomDownPipeline);
     if (g_bloomBlurPipeline) wgpuComputePipelineRelease(g_bloomBlurPipeline);
     if (g_bloomDownLayout) wgpuBindGroupLayoutRelease(g_bloomDownLayout);
