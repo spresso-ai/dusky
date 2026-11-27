@@ -1527,7 +1527,7 @@ void on_frame_before_hud(ModContext*, const GfxStageContext*, void*) {
         u.bloom_size[1] = static_cast<float>(g_bloomA.height);
         u.bloom = bloomStrength;
     }
-    u.lift = get_percent(g_cvarLift, 25, 100);
+    u.lift = get_percent(g_cvarLift, 10, 100);
     g_diag.grade = true;
 
     GfxRange range{0, 0};
@@ -1999,7 +1999,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(register_int("grain", 0, g_cvarGrain, error));
     TRY(register_int("bloom", 70, g_cvarBloom, error));
     TRY(register_int("bloomThreshold", 55, g_cvarBloomThreshold, error));
-    TRY(register_int("lift", 25, g_cvarLift, error));
+    TRY(register_int("lift", 10, g_cvarLift, error));
     TRY(register_bool("keyboardDefaults", true, g_cvarKeyboardDefaults, error));
     TRY(register_bool("lightingEnabled", true, g_cvarLightingEnabled, error));
     TRY(register_int("lightingStrength", 100, g_cvarLightingStrength, error));

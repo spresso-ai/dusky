@@ -252,8 +252,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         outc = linear_to_srgb(c);
     }
     // Schaduwen optillen (indirect licht / lichte, luchtige look), hoge lichten blijven
+    // Getint met de schaduwtint van het profiel (groen/koel in het bos), niet grijs.
     let lo = 1.0 - luma(outc);
-    outc = outc + u.lift * (vec3f(1.0) - outc) * lo * lo * 0.5;
+    let liftCol = clamp(u.shadow_tint * vec3f(0.55, 0.65, 0.6), vec3f(0.0), vec3f(1.0));
+    outc = outc + u.lift * liftCol * lo * lo * lo * 0.6;
 
     // Lens-effecten in weergaveruimte (blijven helder en scherp)
     outc += lens_flare(in.uv, sun_visibility());
