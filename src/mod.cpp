@@ -14,6 +14,9 @@
 //     berekende ambient-, mist- en luchtkleuren per gebied bijstuurt.
 //  6. Dichter gras: hooks op het aanmaken van gras/bloemen die extra pollen bijplaatsen naast
 //     de originele, binnen de vaste pool van de game.
+//  8. Toetsenbord: een standaard toetsindeling (WASD, spatie, muisknoppen) voor speler 1,
+//     alleen als er nog geen eigen toetsindeling is ingesteld. De muis-camera zelf is een
+//     ingebouwde instelling van Dusklight (game.enableMouseCamera).
 //  7. Gereedschap "Textures dumpen": zet de (in de release uitgeschakelde) texture-dump van
 //     de Aurora-renderer aan, als bron voor een HD-texturepakket (tools/hd_textures.py).
 //
@@ -24,6 +27,7 @@
 // de zon- en maanrichting is overgenomen uit mods/shadow_mod (Twilit Realm).
 
 #include "d/actor/d_a_grass.h"
+#include <dolphin/pad.h>
 #include "d/actor/d_flower.h"
 #include "d/actor/d_grass.h"
 #include "d/d_com_inf_game.h"
@@ -267,6 +271,7 @@ ConfigVarHandle g_cvarGrassEnabled = 0;
 ConfigVarHandle g_cvarGrassDensity = 0;
 ConfigVarHandle g_cvarFlowerDensity = 0;
 ConfigVarHandle g_cvarTextureDump = 0;
+ConfigVarHandle g_cvarKeyboardDefaults = 0;
 ConfigVarHandle g_cvarLightingEnabled = 0;
 ConfigVarHandle g_cvarLightingStrength = 0;
 ConfigVarHandle g_cvarTransitionSpeed = 0;
@@ -669,6 +674,69 @@ void count_dump_files() {
         ++n;
     }
     g_dumpFileCount = n;
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// Toetsenbord: standaard toetsindeling
+// ---------------------------------------------------------------------------------------------
+//
+// Dusklight heeft geen standaardtoetsen: elke toets staat op "niet ingesteld" tot je hem zelf
+// koppelt. We zetten een indeling voor speler 1, maar alléén als er nog geen eigen indeling
+// is (PADGetKeyButtonBindings geeft dan nullptr). Wie later in Instellingen > Besturing iets
+// aanpast, krijgt een opgeslagen eigen indeling en die blijft voortaan staan.
+//
+// Toetscodes zijn SDL-scancodes (= USB-HID-codes), onafhankelijk van de toetsenbordindeling.
+
+namespace sc {
+constexpr s32 A = 4, C = 6, D = 7, E = 8, F = 9, I = 12, Q = 20, R = 21, S = 22, V = 25, W = 26;
+constexpr s32 Return = 40, Tab = 43, Space = 44, Right = 79, Left = 80, Down = 81, Up = 82;
+constexpr s32 LShift = 225;
+}  // namespace sc
+
+bool g_keyboardApplied = false;
+
+void apply_keyboard_defaults() {
+    u32 count = 0;
+    if (PADGetKeyButtonBindings(0, &count) != nullptr) {
+        svc_log->info(mod_ctx, "eigen toetsindeling gevonden; standaardindeling niet gezet");
+        return;
+    }
+    const PADKeyButtonBinding buttons[] = {
+        {sc::Space, PAD_BUTTON_A},             // actie / springen / praten
+        {PAD_KEY_MOUSE_LEFT, PAD_BUTTON_B},    // zwaard
+        {sc::Q, PAD_BUTTON_X},                 // voorwerp X
+        {sc::E, PAD_BUTTON_Y},                 // voorwerp Y
+        {sc::Return, PAD_BUTTON_START},        // pauze / menu
+        {sc::F, PAD_TRIGGER_Z},                // Midna
+        {PAD_KEY_MOUSE_RIGHT, PAD_TRIGGER_L},  // richten / vastzetten
+        {sc::LShift, PAD_TRIGGER_R},           // schild / bukken
+        {sc::I, PAD_BUTTON_UP},                // D-pad omhoog (voorwerpen)
+        {sc::C, PAD_BUTTON_DOWN},              // D-pad omlaag
+        {sc::V, PAD_BUTTON_LEFT},              // D-pad links
+        {sc::Tab, PAD_BUTTON_RIGHT},           // D-pad rechts (kaart)
+    };
+    const PADKeyAxisBinding axes[] = {
+        {sc::D, PAD_AXIS_LEFT_X_POS, 100},     // lopen
+        {sc::A, PAD_AXIS_LEFT_X_NEG, 100},
+        {sc::W, PAD_AXIS_LEFT_Y_POS, 100},
+        {sc::S, PAD_AXIS_LEFT_Y_NEG, 100},
+        {sc::Right, PAD_AXIS_RIGHT_X_POS, 100},  // camera met pijltjes (naast de muis)
+        {sc::Left, PAD_AXIS_RIGHT_X_NEG, 100},
+        {sc::Up, PAD_AXIS_RIGHT_Y_POS, 100},
+        {sc::Down, PAD_AXIS_RIGHT_Y_NEG, 100},
+        {PAD_KEY_MOUSE_RIGHT, PAD_AXIS_TRIGGER_L, 100},
+        {sc::LShift, PAD_AXIS_TRIGGER_R, 100},
+    };
+    for (const auto& b : buttons) {
+        PADSetKeyButtonBinding(0, b);
+    }
+    for (const auto& a : axes) {
+        PADSetKeyAxisBinding(0, a);
+    }
+    PADSetKeyboardActive(0, TRUE);
+    g_keyboardApplied = true;
+    svc_log->info(mod_ctx, "standaard toetsindeling gezet (WASD, spatie, muisknoppen)");
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1446,6 +1514,13 @@ ModResult build_panel(ModContext*, UiElementHandle panel, void*, ModError*) {
     add_number(panel, "Grasdichtheid", g_cvarGrassDensity, 100, 400, 25);
     add_number(panel, "Bloemdichtheid", g_cvarFlowerDensity, 100, 400, 25);
 
+    svc_ui->pane_add_section(mod_ctx, panel, "Toetsenbord");
+    add_toggle(panel, "Standaard toetsindeling als er nog geen eigen is", g_cvarKeyboardDefaults);
+    svc_ui->pane_add_text(mod_ctx, panel,
+        "WASD lopen, muis camera, spatie actie, linkermuis zwaard, rechtermuis richten, "
+        "Shift schild, Q/E voorwerpen, F Midna, Tab kaart, I voorwerpen, Enter pauze",
+        nullptr);
+
     svc_ui->pane_add_section(mod_ctx, panel, "Gereedschap: HD-textures");
     add_toggle(panel, "Textures dumpen (voor tools/hd_textures.py)", g_cvarTextureDump);
     svc_ui->pane_add_text(mod_ctx, panel, "Dumps: ...", &g_dumpText);
@@ -1545,6 +1620,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(register_int("grassDensity", 200, g_cvarGrassDensity, error));
     TRY(register_int("flowerDensity", 150, g_cvarFlowerDensity, error));
     TRY(register_bool("textureDump", false, g_cvarTextureDump, error));
+    TRY(register_bool("keyboardDefaults", true, g_cvarKeyboardDefaults, error));
     TRY(register_bool("lightingEnabled", true, g_cvarLightingEnabled, error));
     TRY(register_int("lightingStrength", 100, g_cvarLightingStrength, error));
     TRY(register_int("transitionSpeed", 4, g_cvarTransitionSpeed, error));
@@ -1601,6 +1677,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     }
 
     svc_config->subscribe(mod_ctx, g_cvarTextureDump, on_texture_dump_changed, nullptr, nullptr);
+    if (get_bool(g_cvarKeyboardDefaults, true)) {
+        apply_keyboard_defaults();
+    }
     apply_texture_dump(get_bool(g_cvarTextureDump, false));
 
     UiModsPanelDesc panel = UI_MODS_PANEL_DESC_INIT;
@@ -1608,7 +1687,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     panel.update = update_panel;
     svc_ui->register_mods_panel(mod_ctx, &panel);
 
-    svc_log->info(mod_ctx, "Sfeerpakket 0.3 geladen");
+    svc_log->info(mod_ctx, "Sfeerpakket 0.4 geladen");
     return MOD_OK;
 }
 

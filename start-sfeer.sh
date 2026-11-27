@@ -42,4 +42,6 @@ exec "$BIN" \
     --cvar "game.bloomMultiplier=1.25" \
     --cvar "game.depthOfFieldMode=2" \
     --cvar "game.shadowResolutionMultiplier=4" \
+    --cvar "game.enableMouseCamera=true" \
+    --cvar "game.enableMouseAim=true" \
     "$@"
