@@ -27,7 +27,7 @@ struct Uniforms {
     output_srgb: f32,      // 1 als de scene-target een sRGB-formaat heeft
     debug_view: f32,       // 1 = toon alleen de mistdekking
     sky_depth: f32,        // ruwe diepte vanaf waar een pixel als lucht telt
-    _pad0: f32,
+    sky_dist: f32,         // wereldafstand vanaf waar een pixel als lucht/skydome telt
     _pad1: f32,
     _pad2: f32,
 }
@@ -86,7 +86,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let depth = textureLoad(scene_depth, px, 0).r;
 
     // Lucht = gewiste pixels of alles voorbij ~90% van het verre vlak (de skydome).
-    let is_sky = select(depth >= u.sky_depth, depth <= u.sky_depth, u.reversed_z > 0.5);
+    var is_sky = select(depth >= u.sky_depth, depth <= u.sky_depth, u.reversed_z > 0.5);
+    var world_pt = vec3f(0.0);
+    if !is_sky {
+        world_pt = unproject(in.uv, depth);
+        // Skydome die als geometrie in de dieptebuffer staat: ook als lucht behandelen.
+        is_sky = distance(world_pt, u.eye) > u.sky_dist;
+    }
 
     var ray_dir: vec3f;
     var dist: f32;
@@ -95,8 +101,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         ray_dir = normalize(far_point - u.eye);
         dist = u.sky_distance;
     } else {
-        let world = unproject(in.uv, depth);
-        let to_point = world - u.eye;
+        let to_point = world_pt - u.eye;
         dist = length(to_point);
         ray_dir = to_point / max(dist, 1e-4);
     }
@@ -111,10 +116,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let aerial_t = smoothstep(0.0, 1.0, dist / max(u.aerial_distance, 1.0));
     var color = mix(u.fog_color, u.aerial_color, aerial_t);
 
-    // Zonnegloed: smalle kern plus brede halo.
+    // Zonverlichte nevel: brede voorwaartse verstrooiing (Henyey-Greenstein-achtig) plus een
+    // smalle kern. Kijk je richting de zon, dan licht de nevel warm op, zoals in tegenlicht.
     let cos_sun = max(dot(ray_dir, u.sun_dir), 0.0);
-    let glow = pow(cos_sun, 8.0) * 0.6 + pow(cos_sun, 64.0) * 0.8;
+    let glow = pow(cos_sun, 3.0) * 0.55 + pow(cos_sun, 12.0) * 0.6 + pow(cos_sun, 96.0) * 0.9;
     color = color + u.sun_color * glow * u.sun_glow;
+    // Ook loodrecht op de zon een beetje zonlicht in de nevel (de lucht zelf is verlicht).
+    color = color + u.sun_color * 0.12 * u.sun_glow;
 
     if u.debug_view > 0.5 {
         return vec4f(vec3f(opacity), 1.0);

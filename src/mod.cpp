@@ -125,41 +125,41 @@ struct AreaProfile {
 constexpr AreaProfile kFaron = {
     "Faron Woods",
     {"F_SP108", "F_SP117", "D_SB10", nullptr},
-    {1.08f, 1.04f, 0.92f}, {1.00f, 1.05f, 0.90f}, {1.05f, 1.08f, 0.90f}, {1.00f, 1.00f, 0.98f},
-    0.00012f, 0.0012f, -100.0f, 400.0f, 12000.0f, 0.75f, 0.35f, {0.85f, 0.97f, 0.88f},
-    0.00f, 1.06f, 0.92f, 0.20f, 0.10f, 0.60f,
-    {0.94f, 1.03f, 1.00f}, {1.05f, 1.00f, 0.93f},
-    0.85f, 90.0f, 220.0f, 420.0f,
+    {1.10f, 1.06f, 0.94f}, {1.12f, 1.16f, 1.00f}, {1.10f, 1.12f, 0.92f}, {1.00f, 1.00f, 0.98f},
+    0.00035f, 0.0009f, -60.0f, 250.0f, 9000.0f, 0.85f, 0.90f, {0.85f, 0.97f, 0.88f},
+    0.10f, 1.02f, 1.00f, 0.15f, 0.10f, 0.55f,
+    {0.92f, 1.04f, 1.00f}, {1.05f, 1.01f, 0.93f},
+    1.60f, 160.0f, 320.0f, 700.0f,
 };
 
 constexpr AreaProfile kOrdon = {
     "Ordon",
     {"F_SP103", "F_SP00", "F_SP104", nullptr},
-    {1.06f, 1.02f, 0.95f}, {1.05f, 1.02f, 0.95f}, {1.06f, 1.00f, 0.92f}, {1.01f, 1.00f, 0.98f},
-    0.00005f, 0.0008f, -150.0f, 800.0f, 20000.0f, 0.55f, 0.40f, {0.95f, 0.95f, 1.00f},
-    0.00f, 1.05f, 0.98f, 0.18f, 0.02f, 0.55f,
-    {0.96f, 1.00f, 1.04f}, {1.04f, 1.00f, 0.94f},
-    0.55f, 0.0f, 140.0f, 220.0f,
+    {1.08f, 1.04f, 0.97f}, {1.12f, 1.14f, 1.02f}, {1.06f, 1.02f, 0.95f}, {1.01f, 1.00f, 0.98f},
+    0.00016f, 0.0006f, -120.0f, 500.0f, 16000.0f, 0.75f, 0.85f, {0.92f, 0.96f, 1.04f},
+    0.08f, 1.02f, 1.02f, 0.12f, 0.04f, 0.55f,
+    {0.95f, 1.02f, 1.03f}, {1.04f, 1.00f, 0.95f},
+    1.30f, 50.0f, 180.0f, 450.0f,
 };
 
 constexpr AreaProfile kField = {
     "Hyrule Field",
     {"F_SP121", "F_SP122", "F_SP116", nullptr},
-    {1.04f, 1.03f, 1.00f}, {1.03f, 1.04f, 1.00f}, {0.85f, 0.95f, 1.15f}, {0.95f, 1.00f, 1.08f},
-    0.000025f, 0.00025f, -300.0f, 1500.0f, 45000.0f, 0.60f, 0.25f, {0.75f, 0.88f, 1.15f},
-    0.05f, 1.08f, 1.12f, 0.08f, 0.05f, 0.60f,
-    {0.96f, 1.00f, 1.06f}, {1.04f, 1.02f, 0.95f},
-    0.35f, 0.0f, 60.0f, 260.0f,
+    {1.06f, 1.05f, 1.00f}, {1.10f, 1.12f, 1.04f}, {0.85f, 0.95f, 1.15f}, {0.95f, 1.00f, 1.08f},
+    0.00008f, 0.0002f, -250.0f, 1200.0f, 35000.0f, 0.75f, 0.70f, {0.72f, 0.86f, 1.18f},
+    0.12f, 1.04f, 1.10f, 0.06f, 0.06f, 0.55f,
+    {0.95f, 1.01f, 1.06f}, {1.04f, 1.02f, 0.96f},
+    1.00f, 0.0f, 100.0f, 520.0f,
 };
 
 constexpr AreaProfile kOutdoor = {
     "Buiten (standaard)",
     {nullptr},
-    {1.03f, 1.02f, 0.98f}, {1.02f, 1.02f, 0.98f}, {1.00f, 1.00f, 1.00f}, {1.00f, 1.00f, 1.00f},
-    0.00004f, 0.0005f, -200.0f, 1000.0f, 30000.0f, 0.50f, 0.25f, {0.90f, 0.95f, 1.05f},
-    0.00f, 1.05f, 1.00f, 0.10f, 0.00f, 0.50f,
-    {0.98f, 1.00f, 1.02f}, {1.03f, 1.00f, 0.96f},
-    0.40f, 0.0f, 40.0f, 140.0f,
+    {1.05f, 1.03f, 0.99f}, {1.10f, 1.10f, 1.02f}, {1.00f, 1.00f, 1.00f}, {1.00f, 1.00f, 1.00f},
+    0.00012f, 0.0005f, -200.0f, 800.0f, 25000.0f, 0.70f, 0.70f, {0.90f, 0.95f, 1.05f},
+    0.06f, 1.03f, 1.02f, 0.08f, 0.02f, 0.55f,
+    {0.96f, 1.01f, 1.03f}, {1.03f, 1.00f, 0.96f},
+    1.00f, 20.0f, 120.0f, 360.0f,
 };
 
 constexpr AreaProfile kIndoor = {
@@ -169,7 +169,7 @@ constexpr AreaProfile kIndoor = {
     0.00002f, 0.0010f, -100.0f, 600.0f, 8000.0f, 0.35f, 0.00f, {1.00f, 1.00f, 1.00f},
     0.00f, 1.05f, 0.98f, 0.15f, 0.00f, 0.50f,
     {0.98f, 1.00f, 1.02f}, {1.04f, 1.00f, 0.94f},
-    0.0f, 0.0f, 0.0f, 120.0f,
+    0.0f, 0.0f, 0.0f, 260.0f,
 };
 
 // In de Schemerwereld laten we het originele licht met rust.
@@ -278,6 +278,9 @@ ConfigVarHandle g_cvarVibrance = 0;
 ConfigVarHandle g_cvarFlareEnabled = 0;
 ConfigVarHandle g_cvarFlareStrength = 0;
 ConfigVarHandle g_cvarGrain = 0;
+ConfigVarHandle g_cvarBloom = 0;
+ConfigVarHandle g_cvarBloomThreshold = 0;
+ConfigVarHandle g_cvarLift = 0;
 ConfigVarHandle g_cvarKeyboardDefaults = 0;
 ConfigVarHandle g_cvarLightingEnabled = 0;
 ConfigVarHandle g_cvarLightingStrength = 0;
@@ -400,8 +403,14 @@ void mat_mul_vec4(const float m[16], const float v[4], float out[4]) {
 
 // Ruwe dieptewaarde van een punt op afstand `dist` recht voor de camera. Alles voorbij die
 // diepte telt als lucht (skydome of gewiste pixels).
+constexpr float kSkyDistance = 30000.0f;  // ~300 m: verder weg = lucht/skydome
+
+float sky_distance(const CameraInfo& cam) {
+    return std::max(std::min(cam.far_plane * 0.9f, kSkyDistance), 1000.0f);
+}
+
 float sky_depth_threshold(const CameraInfo& cam, bool reversedZ) {
-    const float dist = std::max(cam.far_plane * 0.9f, 1000.0f);
+    const float dist = sky_distance(cam);
     const float viewPoint[4] = {0.0f, 0.0f, -dist, 1.0f};
     float clip[4];
     mat_mul_vec4(cam.proj_from_view, viewPoint, clip);
@@ -536,7 +545,7 @@ void on_grass_create_post(ModContext*, void* args, void*, void*) {
     }
 
     if (dGrass_packet_c* grass = daGrass_c::getGrass()) {
-        const float mult = get_percent(g_cvarGrassDensity, 200, 400);
+        const float mult = get_percent(g_cvarGrassDensity, 300, 400);
         struct Parent {
             cXyz pos;
             s16 addCol;
@@ -571,7 +580,7 @@ void on_grass_create_post(ModContext*, void* args, void*, void*) {
     }
 
     if (dFlower_packet_c* flower = daGrass_c::getFlower()) {
-        const float mult = get_percent(g_cvarFlowerDensity, 150, 400);
+        const float mult = get_percent(g_cvarFlowerDensity, 250, 400);
         struct Parent {
             cXyz pos;
             s16 addCol;
@@ -791,6 +800,25 @@ struct ScreenSun {
     uint32_t frame = 0;
 };
 ScreenSun g_screenSun;
+
+ResourceBuffer g_bloomSource = RESOURCE_BUFFER_INIT;
+WGPUComputePipeline g_bloomDownPipeline = nullptr;
+WGPUComputePipeline g_bloomBlurPipeline = nullptr;
+WGPUBindGroupLayout g_bloomDownLayout = nullptr;
+WGPUBindGroupLayout g_bloomBlurLayout = nullptr;
+GfxComputeTypeHandle g_bloomComputeType = 0;
+
+// Wat er het laatste frame echt getekend is (voor het paneel).
+struct Diag {
+    bool fog = false;
+    const char* rays = "-";
+    uint32_t particles = 0;
+    bool bloom = false;
+    bool aa = false;
+    bool grade = false;
+    bool depth = false;
+};
+Diag g_diag;
 float g_sunElevation = 1.0f;
 PipelineSlot g_fogPipeline;
 PipelineSlot g_raysPipeline;
@@ -843,8 +871,31 @@ struct GradeUniforms {
     float grain;
     float aspect;
     float has_depth;
+    float bloom_size[2];
+    float bloom;
+    float lift;
 };
-static_assert(sizeof(GradeUniforms) == 128);
+static_assert(sizeof(GradeUniforms) == 144);
+
+struct BloomUniforms {
+    float src_size[2];
+    float dst_size[2];
+    float dir[2];
+    float threshold;
+    float knee;
+};
+static_assert(sizeof(BloomUniforms) == 32);
+
+struct BloomPayload {
+    WGPUTextureView src;
+    WGPUTextureView dst;
+    uint32_t uniform_offset;
+    uint32_t uniform_size;
+    uint32_t width;
+    uint32_t height;
+    uint32_t blur;  // 0 = down, 1 = blur
+};
+static_assert(sizeof(BloomPayload) <= GFX_INLINE_DRAW_PAYLOAD_SIZE);
 
 struct FxaaUniforms {
     float size[2];
@@ -876,7 +927,8 @@ struct FogUniforms {
     float output_srgb;
     float debug_view;
     float sky_depth;
-    float _pad[3];
+    float sky_dist;
+    float _pad[2];
 };
 static_assert(sizeof(FogUniforms) == 192);
 
@@ -929,6 +981,7 @@ static_assert(sizeof(ParticleUniforms) == 176);
 struct DrawPayload {
     WGPUTextureView view;  // snapshot of textuur van dit frame (mag null zijn voor deeltjes)
     WGPUTextureView view2; // tweede textuur (diepte voor de kleurpass), of null
+    WGPUTextureView view3; // derde textuur (bloom voor de kleurpass), of null
     uint32_t uniform_offset;
     uint32_t uniform_size;
     uint32_t instance_count;
@@ -1108,6 +1161,61 @@ bool ensure_rays_target(uint32_t width, uint32_t height) {
     return true;
 }
 
+// Twee bloom-texturen op kwart-resolutie (rgba16float), pingpong voor de vervaging.
+RaysTarget g_bloomA;
+RaysTarget g_bloomB;
+
+bool make_bloom_target(RaysTarget& t, uint32_t w, uint32_t h, const char* label) {
+    WGPUTextureDescriptor d = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    d.label = {label, WGPU_STRLEN};
+    d.usage = WGPUTextureUsage_StorageBinding | WGPUTextureUsage_TextureBinding;
+    d.size = {w, h, 1};
+    d.format = WGPUTextureFormat_RGBA16Float;
+    d.mipLevelCount = 1;
+    t.texture = wgpuDeviceCreateTexture(g_deviceInfo.device, &d);
+    if (t.texture == nullptr) {
+        return false;
+    }
+    t.view = wgpuTextureCreateView(t.texture, nullptr);
+    t.width = w;
+    t.height = h;
+    return t.view != nullptr;
+}
+
+bool ensure_bloom_targets(uint32_t w, uint32_t h) {
+    if (g_bloomA.texture != nullptr && g_bloomA.width == w && g_bloomA.height == h) {
+        return true;
+    }
+    if (g_bloomA.texture != nullptr) {
+        g_retiredTargets.push_back({std::exchange(g_bloomA, RaysTarget{}), 4});
+        g_retiredTargets.push_back({std::exchange(g_bloomB, RaysTarget{}), 4});
+    }
+    return make_bloom_target(g_bloomA, w, h, "Sfeerpakket bloom A") &&
+           make_bloom_target(g_bloomB, w, h, "Sfeerpakket bloom B");
+}
+
+bool build_bloom_pipelines() {
+    WGPUShaderModule module = create_shader_module("Sfeerpakket bloom", g_bloomSource);
+    if (module == nullptr) {
+        return false;
+    }
+    WGPUComputePipelineDescriptor desc = WGPU_COMPUTE_PIPELINE_DESCRIPTOR_INIT;
+    desc.compute.module = module;
+    desc.label = {"Sfeerpakket bloom down", WGPU_STRLEN};
+    desc.compute.entryPoint = {"down", WGPU_STRLEN};
+    g_bloomDownPipeline = wgpuDeviceCreateComputePipeline(g_deviceInfo.device, &desc);
+    desc.label = {"Sfeerpakket bloom blur", WGPU_STRLEN};
+    desc.compute.entryPoint = {"blur", WGPU_STRLEN};
+    g_bloomBlurPipeline = wgpuDeviceCreateComputePipeline(g_deviceInfo.device, &desc);
+    wgpuShaderModuleRelease(module);
+    if (g_bloomDownPipeline == nullptr || g_bloomBlurPipeline == nullptr) {
+        return false;
+    }
+    g_bloomDownLayout = wgpuComputePipelineGetBindGroupLayout(g_bloomDownPipeline, 0);
+    g_bloomBlurLayout = wgpuComputePipelineGetBindGroupLayout(g_bloomBlurPipeline, 0);
+    return g_bloomDownLayout != nullptr && g_bloomBlurLayout != nullptr;
+}
+
 WGPUBindGroupEntry texture_entry(uint32_t binding, WGPUTextureView view) {
     WGPUBindGroupEntry e = WGPU_BIND_GROUP_ENTRY_INIT;
     e.binding = binding;
@@ -1138,7 +1246,7 @@ enum class Extra { None, Sampler, SecondView };
 
 void draw_with(const GfxDrawContext* ctx, PipelineSlot& slot, const DrawPayload& data,
     uint32_t vertexCount, uint32_t instanceCount, Extra extra = Extra::None) {
-    WGPUBindGroupEntry entries[3];
+    WGPUBindGroupEntry entries[4];
     size_t n = 0;
     if (data.view != nullptr) {
         entries[n++] = texture_entry(0, data.view);
@@ -1151,6 +1259,7 @@ void draw_with(const GfxDrawContext* ctx, PipelineSlot& slot, const DrawPayload&
         } else if (extra == Extra::SecondView) {
             // Zonder diepte binden we de kleur nogmaals (de shader weet het via has_depth).
             entries[n++] = texture_entry(2, data.view2 != nullptr ? data.view2 : data.view);
+            entries[n++] = texture_entry(3, data.view3 != nullptr ? data.view3 : data.view);
         }
     } else {
         entries[n++] = uniform_entry(0, ctx->uniform_buffer, data.uniform_offset, data.uniform_size);
@@ -1253,6 +1362,34 @@ void on_rays_compute(
     wgpuBindGroupRelease(group);
 }
 
+void on_bloom_compute(
+    ModContext*, const GfxComputeContext* ctx, const void* payload, size_t size, void*) {
+    if (size != sizeof(BloomPayload)) {
+        return;
+    }
+    BloomPayload data;
+    std::memcpy(&data, payload, sizeof(data));
+    WGPUComputePipeline pipeline = data.blur ? g_bloomBlurPipeline : g_bloomDownPipeline;
+    WGPUBindGroupLayout layout = data.blur ? g_bloomBlurLayout : g_bloomDownLayout;
+    if (pipeline == nullptr || data.src == nullptr || data.dst == nullptr) {
+        return;
+    }
+    const WGPUBindGroupEntry entries[3] = {texture_entry(0, data.src), texture_entry(1, data.dst),
+        uniform_entry(2, ctx->uniform_buffer, data.uniform_offset, data.uniform_size)};
+    WGPUBindGroup group = make_bind_group(ctx->device, layout, entries, 3);
+    if (group == nullptr) {
+        return;
+    }
+    WGPUComputePassDescriptor passDesc = WGPU_COMPUTE_PASS_DESCRIPTOR_INIT;
+    WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(ctx->encoder, &passDesc);
+    wgpuComputePassEncoderSetPipeline(pass, pipeline);
+    wgpuComputePassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+    wgpuComputePassEncoderDispatchWorkgroups(pass, (data.width + 7) / 8, (data.height + 7) / 8, 1);
+    wgpuComputePassEncoderEnd(pass);
+    wgpuComputePassEncoderRelease(pass);
+    wgpuBindGroupRelease(group);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Stage-hooks (game-thread)
 // ---------------------------------------------------------------------------------------------
@@ -1285,15 +1422,18 @@ void push_fxaa() {
     if (svc_gfx->push_uniform(mod_ctx, &u, sizeof(u), &range) != MOD_OK) {
         return;
     }
-    const DrawPayload payload{resolved.color, nullptr, range.offset, range.size, 1};
+    const DrawPayload payload{resolved.color, nullptr, nullptr, range.offset, range.size, 1};
     svc_gfx->push_draw(mod_ctx, g_fxaaDrawType, &payload, sizeof(payload));
 }
 
 void on_frame_before_hud(ModContext*, const GfxStageContext*, void*) {
     ++g_frameCounter;
     // 1. Anti-aliasing: schrijft over de scene; de volgende opname ziet het resultaat.
+    g_diag.aa = false;
+    g_diag.grade = false;
     if (get_bool(g_cvarAaEnabled, true)) {
         push_fxaa();
+        g_diag.aa = true;
     }
     if (!get_bool(g_cvarGradeEnabled, true)) {
         return;
@@ -1307,6 +1447,42 @@ void on_frame_before_hud(ModContext*, const GfxStageContext*, void*) {
         resolved.color == nullptr || resolved.width == 0 || resolved.height == 0)
     {
         return;
+    }
+
+    // Gloed: drempel + verkleinen, dan horizontaal en verticaal vervagen.
+    WGPUTextureView bloomView = nullptr;
+    float bloomStrength = get_percent(g_cvarBloom, 70, 300);
+    g_diag.bloom = false;
+    if (bloomStrength > 0.001f && g_bloomDownPipeline != nullptr) {
+        const uint32_t bw = std::max(resolved.width / 4, 1u);
+        const uint32_t bh = std::max(resolved.height / 4, 1u);
+        if (ensure_bloom_targets(bw, bh)) {
+            auto push_bloom = [&](WGPUTextureView src, WGPUTextureView dst, bool blur, float dx,
+                                  float dy) -> bool {
+                BloomUniforms bu{};
+                bu.src_size[0] = blur ? static_cast<float>(bw) : static_cast<float>(resolved.width);
+                bu.src_size[1] = blur ? static_cast<float>(bh) : static_cast<float>(resolved.height);
+                bu.dst_size[0] = static_cast<float>(bw);
+                bu.dst_size[1] = static_cast<float>(bh);
+                bu.dir[0] = dx;
+                bu.dir[1] = dy;
+                bu.threshold = get_percent(g_cvarBloomThreshold, 55, 100);
+                bu.knee = 0.25f;
+                GfxRange r{0, 0};
+                if (svc_gfx->push_uniform(mod_ctx, &bu, sizeof(bu), &r) != MOD_OK) {
+                    return false;
+                }
+                const BloomPayload bp{src, dst, r.offset, r.size, bw, bh, blur ? 1u : 0u};
+                return svc_gfx->push_compute(mod_ctx, g_bloomComputeType, &bp, sizeof(bp)) == MOD_OK;
+            };
+            if (push_bloom(resolved.color, g_bloomA.view, false, 0, 0) &&
+                push_bloom(g_bloomA.view, g_bloomB.view, true, 1, 0) &&
+                push_bloom(g_bloomB.view, g_bloomA.view, true, 0, 1))
+            {
+                bloomView = g_bloomA.view;
+                g_diag.bloom = true;
+            }
+        }
     }
 
     const AreaProfile& p = g_current;
@@ -1329,7 +1505,7 @@ void on_frame_before_hud(ModContext*, const GfxStageContext*, void*) {
     u.frame = static_cast<float>(g_frameCounter % 1024u);
     u.debug_split = get_bool(g_cvarSplitView, false) ? 1.0f : 0.0f;
     u.sharpen = get_percent(g_cvarSharpen, 40, 100);
-    u.vibrance = get_percent(g_cvarVibrance, 20, 100);
+    u.vibrance = get_percent(g_cvarVibrance, 35, 100);
     u.grain = get_percent(g_cvarGrain, 0, 100) * 0.08f;
     u.aspect = u.size[0] / std::max(u.size[1], 1.0f);
     const bool sunFresh = g_screenSun.valid && g_screenSun.frame + 2 >= g_frameCounter;
@@ -1346,12 +1522,19 @@ void on_frame_before_hud(ModContext*, const GfxStageContext*, void*) {
     }
     u.reversed_z = g_deviceInfo.uses_reversed_z ? 1.0f : 0.0f;
     u.has_depth = resolved.depth != nullptr ? 1.0f : 0.0f;
+    if (bloomView != nullptr) {
+        u.bloom_size[0] = static_cast<float>(g_bloomA.width);
+        u.bloom_size[1] = static_cast<float>(g_bloomA.height);
+        u.bloom = bloomStrength;
+    }
+    u.lift = get_percent(g_cvarLift, 25, 100);
+    g_diag.grade = true;
 
     GfxRange range{0, 0};
     if (svc_gfx->push_uniform(mod_ctx, &u, sizeof(u), &range) != MOD_OK) {
         return;
     }
-    const DrawPayload payload{resolved.color, resolved.depth, range.offset, range.size, 1};
+    const DrawPayload payload{resolved.color, resolved.depth, bloomView, range.offset, range.size, 1};
     svc_gfx->push_draw(mod_ctx, g_gradeDrawType, &payload, sizeof(payload));
 }
 
@@ -1361,7 +1544,7 @@ void push_fog(const CameraInfo& camera, const GfxResolvedTargets& resolved,
     FogUniforms u{};
     std::memcpy(u.world_from_proj, camera.world_from_proj, sizeof(u.world_from_proj));
     std::memcpy(u.eye, camera.eye, sizeof(u.eye));
-    u.density = p.density * get_percent(g_cvarFogDensity, 100, 300);
+    u.density = p.density * get_percent(g_cvarFogDensity, 100, 400);
     u.height_falloff = p.falloff;
     u.base_height = g_smoothedPlayerY + p.baseOffset;
     u.start_distance = p.startDist;
@@ -1374,6 +1557,7 @@ void push_fog(const CameraInfo& camera, const GfxResolvedTargets& resolved,
     u.output_srgb = is_srgb_format(g_deviceInfo.color_format) ? 1.0f : 0.0f;
     u.debug_view = get_bool(g_cvarFogDebug, false) ? 1.0f : 0.0f;
     u.sky_depth = skyDepth;
+    u.sky_dist = sky_distance(camera);
 
     // Mistkleur = de (al door ons getinte) mistkleur van de game; verre nevel = de luchtkleur
     // van de game met de profieltint. Zo lopen beide mee met tijd van de dag en weer.
@@ -1392,14 +1576,15 @@ void push_fog(const CameraInfo& camera, const GfxResolvedTargets& resolved,
     if (svc_gfx->push_uniform(mod_ctx, &u, sizeof(u), &range) != MOD_OK) {
         return;
     }
-    const DrawPayload payload{resolved.depth, nullptr, range.offset, range.size, 1};
-    svc_gfx->push_draw(mod_ctx, g_fogDrawType, &payload, sizeof(payload));
+    const DrawPayload payload{resolved.depth, nullptr, nullptr, range.offset, range.size, 1};
+    g_diag.fog = svc_gfx->push_draw(mod_ctx, g_fogDrawType, &payload, sizeof(payload)) == MOD_OK;
 }
 
 void push_rays(const CameraInfo& camera, const GfxResolvedTargets& resolved, const SunState& sun,
     float skyDepth) {
     const float strength = g_current.rays * get_percent(g_cvarRaysIntensity, 100, 300);
     if (strength <= 0.001f) {
+        g_diag.rays = "uit in dit gebied";
         return;
     }
     // Zonpositie op het scherm: richting (w = 0) door proj_from_world.
@@ -1409,18 +1594,21 @@ void push_rays(const CameraInfo& camera, const GfxResolvedTargets& resolved, con
     float viewDir[4];
     mat_mul_vec4(camera.view_from_world, dir, viewDir);
     const float facing = -viewDir[2];  // cos(hoek tussen kijkrichting en zon)
-    if (facing <= 0.05f || clip[3] <= 1e-5f) {
-        return;  // zon achter de camera
+    if (facing <= 0.02f || clip[3] <= 1e-5f) {
+        g_diag.rays = "zon achter de camera";
+        return;
     }
     const float sunU = clip[0] / clip[3] * 0.5f + 0.5f;
     const float sunV = 0.5f - clip[1] / clip[3] * 0.5f;
     // Afzwakken als de zon ver buiten beeld staat of laag aan de horizon.
     const float outside = std::max({0.0f, -sunU, sunU - 1.0f, -sunV, sunV - 1.0f});
-    const float screenFade = 1.0f - std::clamp(outside / 0.6f, 0.0f, 1.0f);
-    const float facingFade = std::clamp((facing - 0.05f) / 0.45f, 0.0f, 1.0f);
+    // Ook met de zon (ruim) buiten beeld vallen er stralen het beeld in.
+    const float screenFade = 1.0f - std::clamp(outside / 1.6f, 0.0f, 1.0f);
+    const float facingFade = std::clamp((facing - 0.02f) / 0.30f, 0.0f, 1.0f);
     const float fade = screenFade * facingFade;
     const float sunBrightness = std::max({sun.color[0], sun.color[1], sun.color[2]});
     if (fade <= 0.001f || sunBrightness <= 0.001f) {
+        g_diag.rays = sunBrightness <= 0.001f ? "zon onder" : "zon te ver buiten beeld";
         return;
     }
 
@@ -1439,9 +1627,9 @@ void push_rays(const CameraInfo& camera, const GfxResolvedTargets& resolved, con
     cu.depth_size[1] = static_cast<float>(resolved.height);
     cu.sky_depth = skyDepth;
     cu.reversed_z = g_deviceInfo.uses_reversed_z ? 1.0f : 0.0f;
-    cu.samples = kSamples[std::clamp<int64_t>(get_int(g_cvarRaysQuality, 1), 0, 2)];
-    cu.decay = 0.965f;
-    cu.density = 0.85f;
+    cu.samples = kSamples[std::clamp<int64_t>(get_int(g_cvarRaysQuality, 2), 0, 2)];
+    cu.decay = 0.975f;
+    cu.density = 1.0f;
     cu.weight = 1.0f;
     GfxRange computeRange{0, 0};
     if (svc_gfx->push_uniform(mod_ctx, &cu, sizeof(cu), &computeRange) != MOD_OK) {
@@ -1458,27 +1646,29 @@ void push_rays(const CameraInfo& camera, const GfxResolvedTargets& resolved, con
     ru.sun_color[0] = linear_to_display(sun.color[0]);
     ru.sun_color[1] = linear_to_display(sun.color[1]);
     ru.sun_color[2] = linear_to_display(sun.color[2]);
-    ru.intensity = scale;
+    ru.intensity = scale * 1.8f;
     ru.rays_size[0] = static_cast<float>(w);
     ru.rays_size[1] = static_cast<float>(h);
     ru.sun_uv[0] = sunU;
     ru.sun_uv[1] = sunV;
     ru.aspect = static_cast<float>(resolved.width) / static_cast<float>(std::max(resolved.height, 1u));
-    ru.falloff = 4.0f;
+    ru.falloff = 1.2f;
     ru.debug_view = get_bool(g_cvarRaysDebug, false) ? 1.0f : 0.0f;
     GfxRange drawRange{0, 0};
     if (svc_gfx->push_uniform(mod_ctx, &ru, sizeof(ru), &drawRange) != MOD_OK) {
         return;
     }
-    const DrawPayload payload{g_raysTarget.view, nullptr, drawRange.offset, drawRange.size, 1};
-    svc_gfx->push_draw(mod_ctx, g_raysDrawType, &payload, sizeof(payload));
+    const DrawPayload payload{g_raysTarget.view, nullptr, nullptr, drawRange.offset, drawRange.size, 1};
+    if (svc_gfx->push_draw(mod_ctx, g_raysDrawType, &payload, sizeof(payload)) == MOD_OK) {
+        g_diag.rays = "actief";
+    }
 }
 
 void push_particles(const CameraInfo& camera, const SunState& sun) {
     const float amount = get_percent(g_cvarParticleAmount, 100, 300);
     const AreaProfile& p = g_current;
     const float flies = (sun.isNight ? p.fireflyNight : p.fireflyDay) * amount;
-    const float dust = p.dust * amount * (sun.isNight ? 0.35f : 1.0f);
+    const float dust = p.dust * amount * (sun.isNight ? 0.5f : 1.0f);
     const uint32_t nFly = static_cast<uint32_t>(std::clamp(flies, 0.0f, 2000.0f));
     const uint32_t nDust = static_cast<uint32_t>(std::clamp(dust, 0.0f, 4000.0f));
     if (nFly + nDust == 0) {
@@ -1499,28 +1689,30 @@ void push_particles(const CameraInfo& camera, const SunState& sun) {
         std::chrono::duration<float>(std::chrono::steady_clock::now() - g_startTime).count(),
         3600.0f);
     u.ground_y = g_smoothedPlayerY;
-    u.firefly_box = 3200.0f;
-    u.dust_box = 1600.0f;
+    u.firefly_box = 3000.0f;
+    u.dust_box = 1400.0f;
     u.firefly_color[0] = 0.80f;
     u.firefly_color[1] = 1.00f;
     u.firefly_color[2] = 0.38f;
-    u.dust_color[0] = 0.45f * std::max(linear_to_display(sun.color[0]), 0.25f);
-    u.dust_color[1] = 0.42f * std::max(linear_to_display(sun.color[1]), 0.25f);
-    u.dust_color[2] = 0.36f * std::max(linear_to_display(sun.color[2]), 0.25f);
+    u.dust_color[0] = 0.85f * std::max(linear_to_display(sun.color[0]), 0.35f);
+    u.dust_color[1] = 0.80f * std::max(linear_to_display(sun.color[1]), 0.35f);
+    u.dust_color[2] = 0.68f * std::max(linear_to_display(sun.color[2]), 0.35f);
     u.firefly_count = static_cast<float>(nFly);
     u.dust_count = static_cast<float>(nDust);
     std::memcpy(u.sun_dir, sun.dir, sizeof(u.sun_dir));
-    u.firefly_size = 5.0f;
-    u.dust_size = 1.6f;
-    u.firefly_height = 260.0f;
+    u.firefly_size = 9.0f;
+    u.dust_size = 4.5f;
+    u.firefly_height = 320.0f;
     u.brightness = get_percent(g_cvarParticleBrightness, 100, 300);
 
     GfxRange range{0, 0};
     if (svc_gfx->push_uniform(mod_ctx, &u, sizeof(u), &range) != MOD_OK) {
         return;
     }
-    const DrawPayload payload{nullptr, nullptr, range.offset, range.size, nFly + nDust};
-    svc_gfx->push_draw(mod_ctx, g_particlesDrawType, &payload, sizeof(payload));
+    const DrawPayload payload{nullptr, nullptr, nullptr, range.offset, range.size, nFly + nDust};
+    if (svc_gfx->push_draw(mod_ctx, g_particlesDrawType, &payload, sizeof(payload)) == MOD_OK) {
+        g_diag.particles = nFly + nDust;
+    }
 }
 
 // Zonpositie op het scherm voor de lens-effecten in de kleurpass.
@@ -1555,6 +1747,10 @@ void update_screen_sun(const CameraInfo& camera, const SunState& sun) {
 
 void on_scene_after_opaque(ModContext*, const GfxStageContext* stageCtx, void*) {
     tick_retired_targets();
+    g_diag.fog = false;
+    g_diag.rays = "-";
+    g_diag.particles = 0;
+    g_diag.depth = false;
     const bool fogOn = get_bool(g_cvarFogEnabled, true);
     const bool raysOn = get_bool(g_cvarRaysEnabled, true);
     const bool particlesOn = get_bool(g_cvarParticlesEnabled, true);
@@ -1589,6 +1785,7 @@ void on_scene_after_opaque(ModContext*, const GfxStageContext* stageCtx, void*) 
             if (raysOn) {
                 push_rays(camera, resolved, sun, skyDepth);
             }
+            g_diag.depth = true;
         } else if (!g_warnedFogUnavailable) {
             g_warnedFogUnavailable = true;
             svc_log->warn(mod_ctx, "geen dieptebuffer beschikbaar; mist en lichtstralen staan uit");
@@ -1605,6 +1802,7 @@ void on_scene_after_opaque(ModContext*, const GfxStageContext* stageCtx, void*) 
 
 UiElementHandle g_statusText = 0;
 UiElementHandle g_dumpText = 0;
+UiElementHandle g_diagText = 0;
 
 void add_toggle(UiElementHandle pane, const char* label, ConfigVarHandle var) {
     UiControlDesc c = UI_CONTROL_DESC_INIT;
@@ -1632,11 +1830,17 @@ void add_number(UiElementHandle pane, const char* label, ConfigVarHandle var, in
 ModResult build_panel(ModContext*, UiElementHandle panel, void*, ModError*) {
     svc_ui->pane_add_section(mod_ctx, panel, "Status");
     svc_ui->pane_add_text(mod_ctx, panel, "Gebied: ...", &g_statusText);
+    svc_ui->pane_add_text(mod_ctx, panel, "Effecten: ...", &g_diagText);
 
     svc_ui->pane_add_section(mod_ctx, panel, "Beeldscherpte");
     add_toggle(panel, "Anti-aliasing (gladde randen)", g_cvarAaEnabled);
     add_number(panel, "Verscherping", g_cvarSharpen, 0, 100, 5);
     add_toggle(panel, "Toon AA-randen (debug)", g_cvarAaDebug);
+
+    svc_ui->pane_add_section(mod_ctx, panel, "Gloed en licht");
+    add_number(panel, "Gloed (bloom)", g_cvarBloom, 0, 300, 10);
+    add_number(panel, "Gloed-drempel", g_cvarBloomThreshold, 0, 100, 5);
+    add_number(panel, "Schaduwen optillen", g_cvarLift, 0, 100, 5);
 
     svc_ui->pane_add_section(mod_ctx, panel, "Lens");
     add_toggle(panel, "Lensflare en zongloed", g_cvarFlareEnabled);
@@ -1696,6 +1900,14 @@ ModResult update_panel(ModContext*, void*, ModError*) {
         std::snprintf(text, sizeof(text), "Gebied: %s  |  extra graspollen: %d",
             g_target ? g_target->name : "-", g_grassExtraTotal);
         svc_ui->elem_set_text(mod_ctx, g_statusText, text);
+    }
+    if (g_diagText != 0) {
+        char text[320];
+        std::snprintf(text, sizeof(text),
+            "Mist: %s | Stralen: %s | Deeltjes: %u | Gloed: %s | AA: %s | Kleur: %s | Diepte: %s",
+            g_diag.fog ? "aan" : "uit", g_diag.rays, g_diag.particles, g_diag.bloom ? "aan" : "uit",
+            g_diag.aa ? "aan" : "uit", g_diag.grade ? "aan" : "uit", g_diag.depth ? "ja" : "nee");
+        svc_ui->elem_set_text(mod_ctx, g_diagText, text);
     }
     if (g_dumpText != 0) {
         char text[640];
@@ -1769,22 +1981,25 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(register_bool("fogDebug", false, g_cvarFogDebug, error));
     TRY(register_bool("raysEnabled", true, g_cvarRaysEnabled, error));
     TRY(register_int("raysIntensity", 100, g_cvarRaysIntensity, error));
-    TRY(register_int("raysQuality", 1, g_cvarRaysQuality, error));
+    TRY(register_int("raysQuality", 2, g_cvarRaysQuality, error));
     TRY(register_bool("raysDebug", false, g_cvarRaysDebug, error));
     TRY(register_bool("particlesEnabled", true, g_cvarParticlesEnabled, error));
     TRY(register_int("particleAmount", 100, g_cvarParticleAmount, error));
     TRY(register_int("particleBrightness", 100, g_cvarParticleBrightness, error));
     TRY(register_bool("grassEnabled", true, g_cvarGrassEnabled, error));
-    TRY(register_int("grassDensity", 200, g_cvarGrassDensity, error));
-    TRY(register_int("flowerDensity", 150, g_cvarFlowerDensity, error));
+    TRY(register_int("grassDensity", 300, g_cvarGrassDensity, error));
+    TRY(register_int("flowerDensity", 250, g_cvarFlowerDensity, error));
     TRY(register_bool("textureDump", false, g_cvarTextureDump, error));
     TRY(register_bool("aaEnabled", true, g_cvarAaEnabled, error));
     TRY(register_bool("aaDebug", false, g_cvarAaDebug, error));
     TRY(register_int("sharpen", 40, g_cvarSharpen, error));
-    TRY(register_int("vibrance", 20, g_cvarVibrance, error));
+    TRY(register_int("vibrance", 35, g_cvarVibrance, error));
     TRY(register_bool("flareEnabled", true, g_cvarFlareEnabled, error));
     TRY(register_int("flareStrength", 100, g_cvarFlareStrength, error));
     TRY(register_int("grain", 0, g_cvarGrain, error));
+    TRY(register_int("bloom", 70, g_cvarBloom, error));
+    TRY(register_int("bloomThreshold", 55, g_cvarBloomThreshold, error));
+    TRY(register_int("lift", 25, g_cvarLift, error));
     TRY(register_bool("keyboardDefaults", true, g_cvarKeyboardDefaults, error));
     TRY(register_bool("lightingEnabled", true, g_cvarLightingEnabled, error));
     TRY(register_int("lightingStrength", 100, g_cvarLightingStrength, error));
@@ -1792,6 +2007,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
 
     TRY(load_shader("grade.wgsl", g_gradeSource, error));
     TRY(load_shader("fxaa.wgsl", g_fxaaSource, error));
+    TRY(load_shader("bloom.wgsl", g_bloomSource, error));
     TRY(load_shader("fog.wgsl", g_fogSource, error));
     TRY(load_shader("rays_compute.wgsl", g_raysComputeSource, error));
     TRY(load_shader("rays_composite.wgsl", g_raysCompositeSource, error));
@@ -1810,6 +2026,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
             return mods::set_error(error, MOD_ERROR, "kon sampler niet maken");
         }
     }
+    if (!build_bloom_pipelines()) {
+        svc_log->warn(mod_ctx, "bloom-pipelines niet beschikbaar; gloed staat uit");
+    }
     if (!build_rays_compute_pipeline()) {
         return mods::set_error(error, MOD_ERROR, "kon compute-pipeline voor lichtstralen niet maken");
     }
@@ -1821,6 +2040,14 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(register_draw("Sfeerpakket particles", on_particles_draw, g_particlesDrawType, error));
 #undef TRY
 
+    {
+        GfxComputeTypeDesc bloomDesc = GFX_COMPUTE_TYPE_DESC_INIT;
+        bloomDesc.label = "Sfeerpakket bloom";
+        bloomDesc.callback = on_bloom_compute;
+        if (svc_gfx->register_compute_type(mod_ctx, &bloomDesc, &g_bloomComputeType) != MOD_OK) {
+            return mods::set_error(error, MOD_ERROR, "kon bloom compute type niet registreren");
+        }
+    }
     GfxComputeTypeDesc computeDesc = GFX_COMPUTE_TYPE_DESC_INIT;
     computeDesc.label = "Sfeerpakket rays";
     computeDesc.callback = on_rays_compute;
@@ -1865,7 +2092,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     panel.update = update_panel;
     svc_ui->register_mods_panel(mod_ctx, &panel);
 
-    svc_log->info(mod_ctx, "Sfeerpakket 0.5 geladen");
+    svc_log->info(mod_ctx, "Sfeerpakket 0.6 (ultiem) geladen");
     return MOD_OK;
 }
 
@@ -1899,6 +2126,15 @@ MOD_EXPORT ModResult mod_shutdown(ModError*) {
     }
     release_slot(g_gradePipeline);
     release_slot(g_fxaaPipeline);
+    if (g_bloomDownPipeline) wgpuComputePipelineRelease(g_bloomDownPipeline);
+    if (g_bloomBlurPipeline) wgpuComputePipelineRelease(g_bloomBlurPipeline);
+    if (g_bloomDownLayout) wgpuBindGroupLayoutRelease(g_bloomDownLayout);
+    if (g_bloomBlurLayout) wgpuBindGroupLayoutRelease(g_bloomBlurLayout);
+    g_bloomDownPipeline = g_bloomBlurPipeline = nullptr;
+    g_bloomDownLayout = g_bloomBlurLayout = nullptr;
+    release_rays_target(g_bloomA);
+    release_rays_target(g_bloomB);
+    svc_resource->free(mod_ctx, &g_bloomSource);
     if (g_linearSampler != nullptr) {
         wgpuSamplerRelease(g_linearSampler);
         g_linearSampler = nullptr;

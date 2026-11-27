@@ -28,12 +28,12 @@ SH="mod.dev_twilitrealm_shadow__mod"
 exec "$BIN" \
     --cvar "$AO.effectEnabled=true" \
     --cvar "$AO.quality=2" \
-    --cvar "$AO.radius=90" \
-    --cvar "$AO.intensity=75" \
+    --cvar "$AO.radius=120" \
+    --cvar "$AO.intensity=100" \
     --cvar "$AO.halfRes=false" \
     --cvar "$SH.effectEnabled=true" \
     --cvar "$SH.mapSize=2" \
-    --cvar "$SH.strength=55" \
+    --cvar "$SH.strength=70" \
     --cvar "$SH.pcf=2" \
     --cvar "$SH.bias=55" \
     --cvar "$SH.boxRadius=5000" \

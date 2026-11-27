@@ -37,11 +37,33 @@ struct Uniforms {
     grain: f32,
     aspect: f32,
     has_depth: f32,
+    bloom_size: vec2f,      // grootte van de bloom-textuur (0 = geen bloom)
+    bloom: f32,             // sterkte van de gloed
+    lift: f32,              // schaduwen optillen (0..1)
 }
 
 @group(0) @binding(0) var scene_color: texture_2d<f32>;
 @group(0) @binding(1) var<uniform> u: Uniforms;
 @group(0) @binding(2) var scene_depth: texture_2d<f32>;
+@group(0) @binding(3) var bloom_tex: texture_2d<f32>;
+
+// Handmatig bilineair uit de (kwart-resolutie) bloom-textuur.
+fn sample_bloom(uv: vec2f) -> vec3f {
+    if u.bloom_size.x < 1.0 {
+        return vec3f(0.0);
+    }
+    let c = uv * u.bloom_size - 0.5;
+    let b = floor(c);
+    let f = c - b;
+    let maxc = vec2i(u.bloom_size) - 1;
+    let p0 = clamp(vec2i(b), vec2i(0), maxc);
+    let p1 = clamp(vec2i(b) + 1, vec2i(0), maxc);
+    let a = textureLoad(bloom_tex, vec2i(p0.x, p0.y), 0).rgb;
+    let bb = textureLoad(bloom_tex, vec2i(p1.x, p0.y), 0).rgb;
+    let cc = textureLoad(bloom_tex, vec2i(p0.x, p1.y), 0).rgb;
+    let d = textureLoad(bloom_tex, vec2i(p1.x, p1.y), 0).rgb;
+    return mix(mix(a, bb, f.x), mix(cc, d, f.x), f.y);
+}
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
@@ -186,6 +208,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     c = c * exp2(u.exposure);
 
+    // Gloed erbij (lineair, vóór de filmische curve, zodat felle gloed zacht afrolt)
+    if u.bloom > 0.001 {
+        var g = sample_bloom(in.uv);
+        if u.input_is_srgb < 0.5 {
+            g = srgb_to_linear(g);
+        }
+        c += g * u.bloom;
+    }
+
     // Witbalans met behoud van helderheid
     let before = max(luma(c), 1e-5);
     c = c * vec3f(1.0 + 0.12 * u.temperature, 1.0 + 0.06 * u.tint, 1.0 - 0.12 * u.temperature);
@@ -220,6 +251,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     if u.input_is_srgb < 0.5 {
         outc = linear_to_srgb(c);
     }
+    // Schaduwen optillen (indirect licht / lichte, luchtige look), hoge lichten blijven
+    let lo = 1.0 - luma(outc);
+    outc = outc + u.lift * (vec3f(1.0) - outc) * lo * lo * 0.5;
 
     // Lens-effecten in weergaveruimte (blijven helder en scherp)
     outc += lens_flare(in.uv, sun_visibility());
