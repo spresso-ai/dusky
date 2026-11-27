@@ -1,0 +1,51 @@
+# Bouwt Sfeerpakket + de demo-mods (Ambient Occlusion, Dynamic Shadows) voor Dusklight op macOS.
+# Resultaat: artifact "dusklight-mods-macos-arm64" met drie .dusk-bestanden.
+name: Mods bouwen
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      dusklight_ref:
+        description: "Dusklight-versie (git-tag)"
+        default: "v2.0.3"
+
+env:
+  DUSKLIGHT_REF: ${{ github.event.inputs.dusklight_ref || 'v2.0.3' }}
+
+jobs:
+  macos-arm64:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dusklight-broncode ophalen
+        run: |
+          git clone --depth 1 --branch "$DUSKLIGHT_REF" https://github.com/TwilitRealm/dusklight.git "$RUNNER_TEMP/dusklight"
+          git -C "$RUNNER_TEMP/dusklight" submodule update --init --depth 1 extern/aurora
+
+      - name: Gereedschap
+        run: brew install ninja || true
+
+      - name: Bouwen
+        run: |
+          set -e
+          DUSK="$RUNNER_TEMP/dusklight"
+          mkdir -p out
+          bouw() {
+            cmake -S "$2" -B "build-$1" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DCMAKE_OSX_ARCHITECTURES=arm64 -DDUSK_DIR="$DUSK"
+            cmake --build "build-$1"
+            cp build-$1/mods/*.dusk out/
+          }
+          bouw sfeerpakket "$GITHUB_WORKSPACE"
+          bouw ao_mod "$DUSK/mods/ao_mod"
+          bouw shadow_mod "$DUSK/mods/shadow_mod"
+          ls -la out
+          for f in out/*.dusk; do unzip -l "$f" | grep -E "lib/|mod.json"; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dusklight-mods-macos-arm64
+          path: out/*.dusk
+          if-no-files-found: error

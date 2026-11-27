@@ -1,0 +1,43 @@
+diff --git a/lib/gx/gx.hpp b/lib/gx/gx.hpp
+index 9e85609..bdf5adc 100644
+--- a/lib/gx/gx.hpp
++++ b/lib/gx/gx.hpp
+@@ -47,7 +47,8 @@ constexpr float GX_LARGE_NUMBER = -1048576.0f;
+ namespace aurora::gx {
+ constexpr bool EnableNormalVisualization = false;
+ constexpr bool EnableDebugPrints = false;
+-constexpr bool UsePerPixelLighting = false;
++// Sfeerpakket-fork: belichting per pixel in plaats van per hoekpunt.
++constexpr bool UsePerPixelLighting = true;
+ constexpr bool UseReversedZ = true;
+ 
+ constexpr u32 MaxTextures = GX_MAX_TEXMAP;
+diff --git a/lib/gx/shader.cpp b/lib/gx/shader.cpp
+index 9dfbdac..5a6e2ad 100644
+--- a/lib/gx/shader.cpp
++++ b/lib/gx/shader.cpp
+@@ -820,7 +820,7 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8
+           var dist_attn = dot(light.dist_att, vec3f(1.0, dist, dist2));
+           attn = max(0.0, cos_attn / dist_attn);)""");
+   } else if (cc.attnFn == GX_AF_SPEC) {
+-    std::string_view normal = UsePerPixelLighting ? "in.mv_nrm"sv : "mv_nrm"sv;
++    std::string_view normal = UsePerPixelLighting ? "normalize(in.mv_nrm)"sv : "mv_nrm"sv;
+     std::string dist_attn = diffFn != GX_DF_NONE
+                                 ? "max(0.0, dot(normalize(light.dist_att), vec3f(1.0, attn, attn * attn)));"
+                                 : "max(0.0, dot(light.dist_att, vec3f(1.0, attn, attn * attn)));";
+@@ -836,13 +836,13 @@ auto lighting_func(const ShaderConfig& config, const ColorChannelConfig& cc, u8
+     lightDiffFn = "1.0"sv;
+   } else if (diffFn == GX_DF_SIGN) {
+     if (UsePerPixelLighting) {
+-      lightDiffFn = "dot(ldir, in.mv_nrm)"sv;
++      lightDiffFn = "dot(ldir, normalize(in.mv_nrm))"sv;
+     } else {
+       lightDiffFn = "dot(ldir, mv_nrm)"sv;
+     }
+   } else if (diffFn == GX_DF_CLAMP) {
+     if (UsePerPixelLighting) {
+-      lightDiffFn = "max(0.0, dot(ldir, in.mv_nrm))"sv;
++      lightDiffFn = "max(0.0, dot(ldir, normalize(in.mv_nrm)))"sv;
+     } else {
+       lightDiffFn = "max(0.0, dot(ldir, mv_nrm))"sv;
+     }
