@@ -13,6 +13,9 @@ on:
 env:
   DUSKLIGHT_REF: ${{ github.event.inputs.dusklight_ref || 'v2.0.3' }}
 
+permissions:
+  contents: write
+
 jobs:
   macos-arm64:
     runs-on: macos-latest
@@ -49,3 +52,16 @@ jobs:
           name: dusklight-mods-macos-arm64
           path: out/*.dusk
           if-no-files-found: error
+
+      - name: Mods in de branch "builds" zetten
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/builds" && cp out/*.dusk "$RUNNER_TEMP/builds/"
+          cd "$RUNNER_TEMP/builds"
+          printf 'Gebouwd door %s voor Dusklight %s (macOS arm64)\n' "$GITHUB_SHA" "$DUSKLIGHT_REF" > BUILD.txt
+          git init -q -b builds
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -qm "Mods voor $DUSKLIGHT_REF ($GITHUB_SHA)"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" builds
