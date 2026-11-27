@@ -39,8 +39,8 @@ exec "$BIN" \
     --cvar "$SH.boxRadius=5000" \
     --cvar "$SH.contactShadows=true" \
     --cvar "game.bloomMode=2" \
-    --cvar "game.bloomMultiplier=1.25" \
-    --cvar "game.depthOfFieldMode=2" \
+    --cvar "game.bloomMultiplier=1.1" \
+    --cvar "game.depthOfFieldMode=0" \
     --cvar "game.shadowResolutionMultiplier=4" \
     --cvar "game.enableMouseCamera=true" \
     --cvar "game.enableMouseAim=true" \

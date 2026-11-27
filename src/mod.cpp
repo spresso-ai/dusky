@@ -127,18 +127,18 @@ constexpr AreaProfile kFaron = {
     {"F_SP108", "F_SP117", "D_SB10", nullptr},
     {1.08f, 1.04f, 0.92f}, {1.00f, 1.05f, 0.90f}, {1.05f, 1.08f, 0.90f}, {1.00f, 1.00f, 0.98f},
     0.00012f, 0.0012f, -100.0f, 400.0f, 12000.0f, 0.75f, 0.35f, {0.85f, 0.97f, 0.88f},
-    0.00f, 1.06f, 0.92f, 0.30f, 0.10f, 0.65f,
-    {0.94f, 1.03f, 1.00f}, {1.06f, 1.00f, 0.90f},
+    0.00f, 1.06f, 0.92f, 0.20f, 0.10f, 0.60f,
+    {0.94f, 1.03f, 1.00f}, {1.05f, 1.00f, 0.93f},
     0.85f, 90.0f, 220.0f, 420.0f,
 };
 
 constexpr AreaProfile kOrdon = {
     "Ordon",
     {"F_SP103", "F_SP00", "F_SP104", nullptr},
-    {1.10f, 1.03f, 0.90f}, {1.08f, 1.02f, 0.90f}, {1.10f, 1.00f, 0.85f}, {1.02f, 1.00f, 0.96f},
+    {1.06f, 1.02f, 0.95f}, {1.05f, 1.02f, 0.95f}, {1.06f, 1.00f, 0.92f}, {1.01f, 1.00f, 0.98f},
     0.00005f, 0.0008f, -150.0f, 800.0f, 20000.0f, 0.55f, 0.40f, {0.95f, 0.95f, 1.00f},
-    0.00f, 1.05f, 1.00f, 0.35f, 0.00f, 0.60f,
-    {0.97f, 1.00f, 1.03f}, {1.07f, 1.00f, 0.88f},
+    0.00f, 1.05f, 0.98f, 0.18f, 0.02f, 0.55f,
+    {0.96f, 1.00f, 1.04f}, {1.04f, 1.00f, 0.94f},
     0.55f, 0.0f, 140.0f, 220.0f,
 };
 
@@ -271,6 +271,13 @@ ConfigVarHandle g_cvarGrassEnabled = 0;
 ConfigVarHandle g_cvarGrassDensity = 0;
 ConfigVarHandle g_cvarFlowerDensity = 0;
 ConfigVarHandle g_cvarTextureDump = 0;
+ConfigVarHandle g_cvarAaEnabled = 0;
+ConfigVarHandle g_cvarAaDebug = 0;
+ConfigVarHandle g_cvarSharpen = 0;
+ConfigVarHandle g_cvarVibrance = 0;
+ConfigVarHandle g_cvarFlareEnabled = 0;
+ConfigVarHandle g_cvarFlareStrength = 0;
+ConfigVarHandle g_cvarGrain = 0;
 ConfigVarHandle g_cvarKeyboardDefaults = 0;
 ConfigVarHandle g_cvarLightingEnabled = 0;
 ConfigVarHandle g_cvarLightingStrength = 0;
@@ -768,6 +775,23 @@ struct PipelineSlot {
 };
 
 PipelineSlot g_gradePipeline;
+PipelineSlot g_fxaaPipeline;
+WGPUSampler g_linearSampler = nullptr;
+GfxDrawTypeHandle g_fxaaDrawType = 0;
+ResourceBuffer g_fxaaSource = RESOURCE_BUFFER_INIT;
+
+// Zon op het scherm, berekend in de wereldcamera-stage en gebruikt door de kleurpass
+// (die stage heeft zelf geen camera).
+struct ScreenSun {
+    bool valid = false;
+    float uv[2] = {0.5f, 0.5f};
+    float strength = 0.0f;     // kijkrichting * buiten-beeld-afzwakking * zonhoogte
+    float color[3] = {0.0f, 0.0f, 0.0f};
+    float skyDepth = 0.0f;
+    uint32_t frame = 0;
+};
+ScreenSun g_screenSun;
+float g_sunElevation = 1.0f;
 PipelineSlot g_fogPipeline;
 PipelineSlot g_raysPipeline;
 PipelineSlot g_particlesPipeline;
@@ -809,9 +833,28 @@ struct GradeUniforms {
     float frame;
     float tint;
     float debug_split;
-    float _pad;
+    float sharpen;
+    float sun_uv[2];
+    float flare;
+    float sky_depth;
+    float sun_color[3];
+    float reversed_z;
+    float vibrance;
+    float grain;
+    float aspect;
+    float has_depth;
 };
-static_assert(sizeof(GradeUniforms) == 80);
+static_assert(sizeof(GradeUniforms) == 128);
+
+struct FxaaUniforms {
+    float size[2];
+    float inv_size[2];
+    float subpix;
+    float edge_threshold;
+    float edge_threshold_min;
+    float debug_view;
+};
+static_assert(sizeof(FxaaUniforms) == 32);
 
 struct FogUniforms {
     float world_from_proj[16];
@@ -885,6 +928,7 @@ static_assert(sizeof(ParticleUniforms) == 176);
 
 struct DrawPayload {
     WGPUTextureView view;  // snapshot of textuur van dit frame (mag null zijn voor deeltjes)
+    WGPUTextureView view2; // tweede textuur (diepte voor de kleurpass), of null
     uint32_t uniform_offset;
     uint32_t uniform_size;
     uint32_t instance_count;
@@ -1090,13 +1134,24 @@ WGPUBindGroup make_bind_group(
 }
 
 // Render-thread: fullscreen-driehoek met (textuur, uniforms) of alleen uniforms (deeltjes).
+enum class Extra { None, Sampler, SecondView };
+
 void draw_with(const GfxDrawContext* ctx, PipelineSlot& slot, const DrawPayload& data,
-    uint32_t vertexCount, uint32_t instanceCount) {
-    WGPUBindGroupEntry entries[2];
+    uint32_t vertexCount, uint32_t instanceCount, Extra extra = Extra::None) {
+    WGPUBindGroupEntry entries[3];
     size_t n = 0;
     if (data.view != nullptr) {
         entries[n++] = texture_entry(0, data.view);
         entries[n++] = uniform_entry(1, ctx->uniform_buffer, data.uniform_offset, data.uniform_size);
+        if (extra == Extra::Sampler) {
+            WGPUBindGroupEntry e = WGPU_BIND_GROUP_ENTRY_INIT;
+            e.binding = 2;
+            e.sampler = g_linearSampler;
+            entries[n++] = e;
+        } else if (extra == Extra::SecondView) {
+            // Zonder diepte binden we de kleur nogmaals (de shader weet het via has_depth).
+            entries[n++] = texture_entry(2, data.view2 != nullptr ? data.view2 : data.view);
+        }
     } else {
         entries[n++] = uniform_entry(0, ctx->uniform_buffer, data.uniform_offset, data.uniform_size);
     }
@@ -1124,7 +1179,17 @@ void on_grade_draw(ModContext*, const GfxDrawContext* ctx, const void* payload, 
         ensure_pipeline(g_gradePipeline, ctx->layout, "Sfeerpakket grade", g_gradeSource,
             Blend::Replace, false))
     {
-        draw_with(ctx, g_gradePipeline, data, 3, 1);
+        draw_with(ctx, g_gradePipeline, data, 3, 1, Extra::SecondView);
+    }
+}
+
+void on_fxaa_draw(ModContext*, const GfxDrawContext* ctx, const void* payload, size_t size, void*) {
+    DrawPayload data;
+    if (read_payload(payload, size, data) && data.view != nullptr && g_linearSampler != nullptr &&
+        ensure_pipeline(g_fxaaPipeline, ctx->layout, "Sfeerpakket fxaa", g_fxaaSource,
+            Blend::Replace, false))
+    {
+        draw_with(ctx, g_fxaaPipeline, data, 3, 1, Extra::Sampler);
     }
 }
 
@@ -1198,14 +1263,45 @@ void copy_rgb(float out[3], const Rgb& c) {
     out[2] = c.b;
 }
 
+void push_fxaa() {
+    GfxResolveDesc resolveDesc = GFX_RESOLVE_DESC_INIT;
+    resolveDesc.color = true;
+    GfxResolvedTargets resolved = GFX_RESOLVED_TARGETS_INIT;
+    if (svc_gfx->resolve_pass(mod_ctx, &resolveDesc, &resolved) != MOD_OK ||
+        resolved.color == nullptr || resolved.width == 0 || resolved.height == 0)
+    {
+        return;
+    }
+    FxaaUniforms u{};
+    u.size[0] = static_cast<float>(resolved.width);
+    u.size[1] = static_cast<float>(resolved.height);
+    u.inv_size[0] = 1.0f / u.size[0];
+    u.inv_size[1] = 1.0f / u.size[1];
+    u.subpix = 0.75f;
+    u.edge_threshold = 0.125f;
+    u.edge_threshold_min = 0.0312f;
+    u.debug_view = get_bool(g_cvarAaDebug, false) ? 1.0f : 0.0f;
+    GfxRange range{0, 0};
+    if (svc_gfx->push_uniform(mod_ctx, &u, sizeof(u), &range) != MOD_OK) {
+        return;
+    }
+    const DrawPayload payload{resolved.color, nullptr, range.offset, range.size, 1};
+    svc_gfx->push_draw(mod_ctx, g_fxaaDrawType, &payload, sizeof(payload));
+}
+
 void on_frame_before_hud(ModContext*, const GfxStageContext*, void*) {
     ++g_frameCounter;
+    // 1. Anti-aliasing: schrijft over de scene; de volgende opname ziet het resultaat.
+    if (get_bool(g_cvarAaEnabled, true)) {
+        push_fxaa();
+    }
     if (!get_bool(g_cvarGradeEnabled, true)) {
         return;
     }
+    // 2. Verscherping + kleur + lens in één pass.
     GfxResolveDesc resolveDesc = GFX_RESOLVE_DESC_INIT;
     resolveDesc.color = true;
-    resolveDesc.depth = false;
+    resolveDesc.depth = true;
     GfxResolvedTargets resolved = GFX_RESOLVED_TARGETS_INIT;
     if (svc_gfx->resolve_pass(mod_ctx, &resolveDesc, &resolved) != MOD_OK ||
         resolved.color == nullptr || resolved.width == 0 || resolved.height == 0)
@@ -1222,7 +1318,9 @@ void on_frame_before_hud(ModContext*, const GfxStageContext*, void*) {
     u.size[0] = static_cast<float>(resolved.width);
     u.size[1] = static_cast<float>(resolved.height);
     u.saturation = p.saturation;
-    u.temperature = p.temperature;
+    // Bij lage zon is het licht van de game al warm: dan minder extra warmte.
+    const float sunHigh = std::clamp(g_sunElevation / 0.45f, 0.0f, 1.0f);
+    u.temperature = p.temperature > 0.0f ? p.temperature * lerpf(0.25f, 1.0f, sunHigh) : p.temperature;
     u.tint = p.tint;
     u.filmic = p.filmic;
     u.vignette = get_percent(g_cvarVignette, 25, 100);
@@ -1230,12 +1328,30 @@ void on_frame_before_hud(ModContext*, const GfxStageContext*, void*) {
     u.input_is_srgb = is_srgb_format(resolved.color_format) ? 1.0f : 0.0f;
     u.frame = static_cast<float>(g_frameCounter % 1024u);
     u.debug_split = get_bool(g_cvarSplitView, false) ? 1.0f : 0.0f;
+    u.sharpen = get_percent(g_cvarSharpen, 40, 100);
+    u.vibrance = get_percent(g_cvarVibrance, 20, 100);
+    u.grain = get_percent(g_cvarGrain, 0, 100) * 0.08f;
+    u.aspect = u.size[0] / std::max(u.size[1], 1.0f);
+    const bool sunFresh = g_screenSun.valid && g_screenSun.frame + 2 >= g_frameCounter;
+    if (sunFresh && get_bool(g_cvarFlareEnabled, true) && g_target != &kIndoor &&
+        g_target != &kTwilight)
+    {
+        u.sun_uv[0] = g_screenSun.uv[0];
+        u.sun_uv[1] = g_screenSun.uv[1];
+        u.flare = g_screenSun.strength * get_percent(g_cvarFlareStrength, 100, 300);
+        u.sun_color[0] = g_screenSun.color[0];
+        u.sun_color[1] = g_screenSun.color[1];
+        u.sun_color[2] = g_screenSun.color[2];
+        u.sky_depth = g_screenSun.skyDepth;
+    }
+    u.reversed_z = g_deviceInfo.uses_reversed_z ? 1.0f : 0.0f;
+    u.has_depth = resolved.depth != nullptr ? 1.0f : 0.0f;
 
     GfxRange range{0, 0};
     if (svc_gfx->push_uniform(mod_ctx, &u, sizeof(u), &range) != MOD_OK) {
         return;
     }
-    const DrawPayload payload{resolved.color, range.offset, range.size, 1};
+    const DrawPayload payload{resolved.color, resolved.depth, range.offset, range.size, 1};
     svc_gfx->push_draw(mod_ctx, g_gradeDrawType, &payload, sizeof(payload));
 }
 
@@ -1276,7 +1392,7 @@ void push_fog(const CameraInfo& camera, const GfxResolvedTargets& resolved,
     if (svc_gfx->push_uniform(mod_ctx, &u, sizeof(u), &range) != MOD_OK) {
         return;
     }
-    const DrawPayload payload{resolved.depth, range.offset, range.size, 1};
+    const DrawPayload payload{resolved.depth, nullptr, range.offset, range.size, 1};
     svc_gfx->push_draw(mod_ctx, g_fogDrawType, &payload, sizeof(payload));
 }
 
@@ -1354,7 +1470,7 @@ void push_rays(const CameraInfo& camera, const GfxResolvedTargets& resolved, con
     if (svc_gfx->push_uniform(mod_ctx, &ru, sizeof(ru), &drawRange) != MOD_OK) {
         return;
     }
-    const DrawPayload payload{g_raysTarget.view, drawRange.offset, drawRange.size, 1};
+    const DrawPayload payload{g_raysTarget.view, nullptr, drawRange.offset, drawRange.size, 1};
     svc_gfx->push_draw(mod_ctx, g_raysDrawType, &payload, sizeof(payload));
 }
 
@@ -1403,8 +1519,38 @@ void push_particles(const CameraInfo& camera, const SunState& sun) {
     if (svc_gfx->push_uniform(mod_ctx, &u, sizeof(u), &range) != MOD_OK) {
         return;
     }
-    const DrawPayload payload{nullptr, range.offset, range.size, nFly + nDust};
+    const DrawPayload payload{nullptr, nullptr, range.offset, range.size, nFly + nDust};
     svc_gfx->push_draw(mod_ctx, g_particlesDrawType, &payload, sizeof(payload));
+}
+
+// Zonpositie op het scherm voor de lens-effecten in de kleurpass.
+void update_screen_sun(const CameraInfo& camera, const SunState& sun) {
+    g_sunElevation = sun.isNight ? 1.0f : std::max(sun.dir[1], 0.0f);
+    const float dir[4] = {sun.dir[0], sun.dir[1], sun.dir[2], 0.0f};
+    float clip[4];
+    mat_mul_vec4(camera.proj_from_world, dir, clip);
+    float viewDir[4];
+    mat_mul_vec4(camera.view_from_world, dir, viewDir);
+    const float facing = -viewDir[2];
+    g_screenSun.valid = false;
+    if (facing <= 0.05f || clip[3] <= 1e-5f || sun.isNight) {
+        return;
+    }
+    const float su = clip[0] / clip[3] * 0.5f + 0.5f;
+    const float sv = 0.5f - clip[1] / clip[3] * 0.5f;
+    const float outside = std::max({0.0f, -su, su - 1.0f, -sv, sv - 1.0f});
+    const float fade = (1.0f - std::clamp(outside / 0.3f, 0.0f, 1.0f)) *
+                       std::clamp((facing - 0.05f) / 0.35f, 0.0f, 1.0f);
+    const float bright = std::max({sun.color[0], sun.color[1], sun.color[2]});
+    g_screenSun.uv[0] = su;
+    g_screenSun.uv[1] = sv;
+    g_screenSun.strength = fade * std::min(bright, 1.0f);
+    g_screenSun.color[0] = linear_to_display(sun.color[0]);
+    g_screenSun.color[1] = linear_to_display(sun.color[1]);
+    g_screenSun.color[2] = linear_to_display(sun.color[2]);
+    g_screenSun.skyDepth = sky_depth_threshold(camera, g_deviceInfo.uses_reversed_z);
+    g_screenSun.frame = g_frameCounter;
+    g_screenSun.valid = g_screenSun.strength > 0.001f;
 }
 
 void on_scene_after_opaque(ModContext*, const GfxStageContext* stageCtx, void*) {
@@ -1426,6 +1572,7 @@ void on_scene_after_opaque(ModContext*, const GfxStageContext* stageCtx, void*) 
         return;
     }
     const SunState sun = compute_sun();
+    update_screen_sun(camera, sun);
 
     if (fogOn || raysOn) {
         GfxResolveDesc resolveDesc = GFX_RESOLVE_DESC_INIT;
@@ -1486,8 +1633,19 @@ ModResult build_panel(ModContext*, UiElementHandle panel, void*, ModError*) {
     svc_ui->pane_add_section(mod_ctx, panel, "Status");
     svc_ui->pane_add_text(mod_ctx, panel, "Gebied: ...", &g_statusText);
 
+    svc_ui->pane_add_section(mod_ctx, panel, "Beeldscherpte");
+    add_toggle(panel, "Anti-aliasing (gladde randen)", g_cvarAaEnabled);
+    add_number(panel, "Verscherping", g_cvarSharpen, 0, 100, 5);
+    add_toggle(panel, "Toon AA-randen (debug)", g_cvarAaDebug);
+
+    svc_ui->pane_add_section(mod_ctx, panel, "Lens");
+    add_toggle(panel, "Lensflare en zongloed", g_cvarFlareEnabled);
+    add_number(panel, "Flare-sterkte", g_cvarFlareStrength, 0, 300, 10);
+    add_number(panel, "Filmkorrel", g_cvarGrain, 0, 100, 5);
+
     svc_ui->pane_add_section(mod_ctx, panel, "Kleurstemming");
     add_toggle(panel, "Aan", g_cvarGradeEnabled);
+    add_number(panel, "Vibrance", g_cvarVibrance, 0, 100, 5);
     add_number(panel, "Sterkte", g_cvarGradeStrength, 0, 150, 5);
     add_number(panel, "Vignet", g_cvarVignette, 0, 100, 5);
     add_toggle(panel, "Voor/na-vergelijking (links origineel)", g_cvarSplitView);
@@ -1620,12 +1778,20 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(register_int("grassDensity", 200, g_cvarGrassDensity, error));
     TRY(register_int("flowerDensity", 150, g_cvarFlowerDensity, error));
     TRY(register_bool("textureDump", false, g_cvarTextureDump, error));
+    TRY(register_bool("aaEnabled", true, g_cvarAaEnabled, error));
+    TRY(register_bool("aaDebug", false, g_cvarAaDebug, error));
+    TRY(register_int("sharpen", 40, g_cvarSharpen, error));
+    TRY(register_int("vibrance", 20, g_cvarVibrance, error));
+    TRY(register_bool("flareEnabled", true, g_cvarFlareEnabled, error));
+    TRY(register_int("flareStrength", 100, g_cvarFlareStrength, error));
+    TRY(register_int("grain", 0, g_cvarGrain, error));
     TRY(register_bool("keyboardDefaults", true, g_cvarKeyboardDefaults, error));
     TRY(register_bool("lightingEnabled", true, g_cvarLightingEnabled, error));
     TRY(register_int("lightingStrength", 100, g_cvarLightingStrength, error));
     TRY(register_int("transitionSpeed", 4, g_cvarTransitionSpeed, error));
 
     TRY(load_shader("grade.wgsl", g_gradeSource, error));
+    TRY(load_shader("fxaa.wgsl", g_fxaaSource, error));
     TRY(load_shader("fog.wgsl", g_fogSource, error));
     TRY(load_shader("rays_compute.wgsl", g_raysComputeSource, error));
     TRY(load_shader("rays_composite.wgsl", g_raysCompositeSource, error));
@@ -1633,11 +1799,23 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     if (svc_gfx->get_device_info(mod_ctx, &g_deviceInfo) != MOD_OK) {
         return mods::set_error(error, MOD_ERROR, "kon GPU-info niet opvragen");
     }
+    {
+        WGPUSamplerDescriptor sd = WGPU_SAMPLER_DESCRIPTOR_INIT;
+        sd.magFilter = WGPUFilterMode_Linear;
+        sd.minFilter = WGPUFilterMode_Linear;
+        sd.addressModeU = WGPUAddressMode_ClampToEdge;
+        sd.addressModeV = WGPUAddressMode_ClampToEdge;
+        g_linearSampler = wgpuDeviceCreateSampler(g_deviceInfo.device, &sd);
+        if (g_linearSampler == nullptr) {
+            return mods::set_error(error, MOD_ERROR, "kon sampler niet maken");
+        }
+    }
     if (!build_rays_compute_pipeline()) {
         return mods::set_error(error, MOD_ERROR, "kon compute-pipeline voor lichtstralen niet maken");
     }
 
     TRY(register_draw("Sfeerpakket grade", on_grade_draw, g_gradeDrawType, error));
+    TRY(register_draw("Sfeerpakket fxaa", on_fxaa_draw, g_fxaaDrawType, error));
     TRY(register_draw("Sfeerpakket fog", on_fog_draw, g_fogDrawType, error));
     TRY(register_draw("Sfeerpakket rays", on_rays_draw, g_raysDrawType, error));
     TRY(register_draw("Sfeerpakket particles", on_particles_draw, g_particlesDrawType, error));
@@ -1687,7 +1865,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     panel.update = update_panel;
     svc_ui->register_mods_panel(mod_ctx, &panel);
 
-    svc_log->info(mod_ctx, "Sfeerpakket 0.4 geladen");
+    svc_log->info(mod_ctx, "Sfeerpakket 0.5 geladen");
     return MOD_OK;
 }
 
@@ -1720,6 +1898,12 @@ MOD_EXPORT ModResult mod_shutdown(ModError*) {
         g_auroraConfig->allowTextureDumps = g_dumpOriginal;  // dumpen nooit laten aanstaan
     }
     release_slot(g_gradePipeline);
+    release_slot(g_fxaaPipeline);
+    if (g_linearSampler != nullptr) {
+        wgpuSamplerRelease(g_linearSampler);
+        g_linearSampler = nullptr;
+    }
+    svc_resource->free(mod_ctx, &g_fxaaSource);
     release_slot(g_fogPipeline);
     release_slot(g_raysPipeline);
     release_slot(g_particlesPipeline);
