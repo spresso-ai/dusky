@@ -91,7 +91,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let albedo = clamp(col / max(mx, 0.03) * 0.55, vec3f(0.0), vec3f(1.0));
     let lum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
     let shadow = 1.0 - smoothstep(0.05, 0.5, lum) * u.shadow_bias;
-    var outc = col + gi * albedo * u.strength * shadow;
+    // Toegevoegd licht schaalt met wat er al is: donkere kleding blijft donker, maar krijgt
+    // wel de kleur van de omgeving; voorkomt een grijze waas over personen in de schaduw.
+    let added = min(gi * albedo * u.strength * shadow, col * 1.2 + vec3f(0.002));
+    var outc = col + added;
     if u.debug > 0.5 {
         outc = gi * u.strength;
     }

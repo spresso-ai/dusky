@@ -40,12 +40,31 @@ struct Uniforms {
     bloom_size: vec2f,      // grootte van de bloom-textuur (0 = geen bloom)
     bloom: f32,             // sterkte van de gloed
     lift: f32,              // schaduwen optillen (0..1)
+    clarity: f32,           // lokaal contrast (0..1)
+    _pad_c0: f32,
+    _pad_c1: f32,
+    _pad_c2: f32,
 }
 
 @group(0) @binding(0) var scene_color: texture_2d<f32>;
 @group(0) @binding(1) var<uniform> u: Uniforms;
 @group(0) @binding(2) var scene_depth: texture_2d<f32>;
 @group(0) @binding(3) var bloom_tex: texture_2d<f32>;
+
+// Lage-doorlaat-helderheid (alpha van de bloom-textuur), bilineair.
+fn sample_low_luma(uv: vec2f) -> f32 {
+    let c = uv * u.bloom_size - 0.5;
+    let b = floor(c);
+    let f = c - b;
+    let maxc = vec2i(u.bloom_size) - 1;
+    let p0 = clamp(vec2i(b), vec2i(0), maxc);
+    let p1 = clamp(vec2i(b) + 1, vec2i(0), maxc);
+    let a = textureLoad(bloom_tex, vec2i(p0.x, p0.y), 0).a;
+    let bb = textureLoad(bloom_tex, vec2i(p1.x, p0.y), 0).a;
+    let cc = textureLoad(bloom_tex, vec2i(p0.x, p1.y), 0).a;
+    let d = textureLoad(bloom_tex, vec2i(p1.x, p1.y), 0).a;
+    return mix(mix(a, bb, f.x), mix(cc, d, f.x), f.y);
+}
 
 // Handmatig bilineair uit de (kwart-resolutie) bloom-textuur.
 fn sample_bloom(uv: vec2f) -> vec3f {
@@ -207,6 +226,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     }
 
     c = c * exp2(u.exposure);
+
+    // Lokaal contrast: versterk het verschil met de omgeving (vormen op personen en rotsen
+    // komen los van een vlakke, waasachtige achtergrond). Tint blijft behouden.
+    if u.clarity > 0.001 && u.bloom_size.x >= 1.0 {
+        var low = max(sample_low_luma(in.uv), 0.0);
+        if u.input_is_srgb < 0.5 {
+            low = pow(low, 2.2);
+        }
+        let l = luma(c);
+        let k = clamp((l + 0.002) / (low + 0.002), 0.3, 3.0);
+        let gain = pow(k, u.clarity) ;
+        // in de donkerste schaduwen minder, anders wordt ruis versterkt
+        c = c * mix(1.0, gain, smoothstep(0.003, 0.03, l));
+    }
 
     // Gloed erbij (lineair, vóór de filmische curve, zodat felle gloed zacht afrolt)
     if u.bloom > 0.001 {

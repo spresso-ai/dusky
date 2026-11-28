@@ -305,6 +305,9 @@ ConfigVarHandle g_cvarGrain = 0;
 ConfigVarHandle g_cvarBloom = 0;
 ConfigVarHandle g_cvarBloomThreshold = 0;
 ConfigVarHandle g_cvarLift = 0;
+ConfigVarHandle g_cvarClarity = 0;
+ConfigVarHandle g_cvarCharAmbient = 0;
+ConfigVarHandle g_cvarWarmComp = 0;
 ConfigVarHandle g_cvarKeyboardDefaults = 0;
 ConfigVarHandle g_cvarLightingEnabled = 0;
 ConfigVarHandle g_cvarLightingStrength = 0;
@@ -490,7 +493,15 @@ void on_set_light_post(ModContext*, void* args, void*, void*) {
         return;
     }
     const float s = get_percent(g_cvarLightingStrength, 100, 200);
-    apply_tint(env->actor_amb_col, g_current.actorAmb, s, g_guardActor);
+    {
+        // Minder vlak omgevingslicht op personen: het zonlicht geeft ze dan weer vorm.
+        const float ca = get_percent(g_cvarCharAmbient, 85, 120);
+        Rgb actorMul = g_current.actorAmb;
+        actorMul.r *= ca;
+        actorMul.g *= ca;
+        actorMul.b *= ca;
+        apply_tint(env->actor_amb_col, actorMul, s, g_guardActor);
+    }
     for (int i = 0; i < 4; ++i) {
         apply_tint(env->bg_amb_col[i], g_current.bgAmb, s, g_guardBg[i]);
     }
@@ -938,8 +949,10 @@ struct GradeUniforms {
     float bloom_size[2];
     float bloom;
     float lift;
+    float clarity;
+    float _padc[3];
 };
-static_assert(sizeof(GradeUniforms) == 144);
+static_assert(sizeof(GradeUniforms) == 160);
 
 struct BloomUniforms {
     float src_size[2];
@@ -1713,11 +1726,11 @@ void push_ssgi(const CameraInfo& camera, const GfxResolvedTargets& resolved, flo
     c.full_size[1] = u.full_size[1];
     c.half_size[0] = u.half_size[0];
     c.half_size[1] = u.half_size[1];
-    c.strength = get_percent(g_cvarSsgiStrength, 100, 400) * 1.6f;
+    c.strength = get_percent(g_cvarSsgiStrength, 70, 400) * 1.6f;
     c.input_is_srgb = u.input_is_srgb;
     c.output_srgb = is_srgb_format(g_deviceInfo.color_format) ? 1.0f : 0.0f;
     c.debug = get_bool(g_cvarSsgiDebug, false) ? 1.0f : 0.0f;
-    c.shadow_bias = 0.75f;
+    c.shadow_bias = 0.5f;
     GfxRange r{0, 0};
     if (svc_gfx->push_uniform(mod_ctx, &c, sizeof(c), &r) != MOD_OK) {
         return;
@@ -1789,7 +1802,7 @@ void push_taa() {
     TaaOutputUniforms o{};
     o.size[0] = u.size[0];
     o.size[1] = u.size[1];
-    o.sharpen = get_percent(g_cvarTaaSharpen, 35, 100);
+    o.sharpen = get_percent(g_cvarTaaSharpen, 50, 100);
     o.debug = get_bool(g_cvarTaaDebug, false) ? 1.0f : 0.0f;
     GfxRange r{0, 0};
     if (svc_gfx->push_uniform(mod_ctx, &o, sizeof(o), &r) != MOD_OK) {
@@ -1906,9 +1919,10 @@ void frame_grade_and_fxaa() {
 
     // Gloed: drempel + verkleinen, dan horizontaal en verticaal vervagen.
     WGPUTextureView bloomView = nullptr;
-    float bloomStrength = get_percent(g_cvarBloom, 70, 300);
+    float bloomStrength = get_percent(g_cvarBloom, 40, 300);
     g_diag.bloom = false;
-    if (bloomStrength > 0.001f && g_bloomDownPipeline != nullptr) {
+    if ((bloomStrength > 0.001f || get_percent(g_cvarClarity, 45, 100) > 0.001f) &&
+        g_bloomDownPipeline != nullptr) {
         const uint32_t bw = std::max(resolved.width / 4, 1u);
         const uint32_t bh = std::max(resolved.height / 4, 1u);
         if (ensure_bloom_targets(bw, bh)) {
@@ -1921,7 +1935,7 @@ void frame_grade_and_fxaa() {
                 bu.dst_size[1] = static_cast<float>(bh);
                 bu.dir[0] = dx;
                 bu.dir[1] = dy;
-                bu.threshold = get_percent(g_cvarBloomThreshold, 55, 100);
+                bu.threshold = get_percent(g_cvarBloomThreshold, 70, 100);
                 bu.knee = 0.25f;
                 GfxRange r{0, 0};
                 if (svc_gfx->push_uniform(mod_ctx, &bu, sizeof(bu), &r) != MOD_OK) {
@@ -1982,7 +1996,18 @@ void frame_grade_and_fxaa() {
         u.bloom_size[1] = static_cast<float>(g_bloomA.height);
         u.bloom = bloomStrength;
     }
+    // Is het licht van de game al warm (zonsondergang)? Dan niet nog eens opwarmen, maar
+    // juist iets neutraliseren: anders lopen huid, kleding en gras in één oranjebruin samen.
+    if (dScnKy_env_light_c* env = dKy_getEnvlight()) {
+        const GXColorS10& a = env->bg_amb_col[0];
+        const float r = std::max<float>(a.r, 0), b = std::max<float>(a.b, 0);
+        const float warmth = (r - b) / (r + b + 30.0f);
+        const float comp = get_percent(g_cvarWarmComp, 100, 200);
+        const float excess = std::clamp((warmth - 0.10f) * 2.5f, 0.0f, 1.0f) * comp;
+        u.temperature = u.temperature * (1.0f - std::min(excess, 1.0f)) - 0.6f * std::max(excess - 0.3f, 0.0f);
+    }
     u.lift = get_percent(g_cvarLift, 10, 100);
+    u.clarity = get_percent(g_cvarClarity, 45, 100);
     g_diag.grade = true;
 
     GfxRange range{0, 0};
@@ -2002,7 +2027,7 @@ void push_fog(const CameraInfo& camera, const GfxResolvedTargets& resolved,
     u.density = p.density * get_percent(g_cvarFogDensity, 100, 400);
     u.height_falloff = p.falloff;
     u.base_height = g_smoothedPlayerY + p.baseOffset;
-    u.start_distance = p.startDist;
+    u.start_distance = std::max(p.startDist, 900.0f);  // personen dichtbij blijven helder
     u.aerial_distance = p.aerialDist;
     u.max_opacity = p.maxOpacity;
     u.sky_distance = p.aerialDist * 1.5f;
@@ -2547,6 +2572,9 @@ ModResult build_panel(ModContext*, UiElementHandle panel, void*, ModError*) {
     add_number(panel, "Gloed (bloom)", g_cvarBloom, 0, 300, 10);
     add_number(panel, "Gloed-drempel", g_cvarBloomThreshold, 0, 100, 5);
     add_number(panel, "Schaduwen optillen", g_cvarLift, 0, 100, 5);
+    add_number(panel, "Lokaal contrast", g_cvarClarity, 0, 100, 5);
+    add_number(panel, "Omgevingslicht op personen", g_cvarCharAmbient, 50, 120, 5);
+    add_number(panel, "Oranje waas neutraliseren", g_cvarWarmComp, 0, 200, 10);
 
     svc_ui->pane_add_section(mod_ctx, panel, "Lens");
     add_toggle(panel, "Lensflare en zongloed", g_cvarFlareEnabled);
@@ -2724,11 +2752,11 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(register_int("particleBrightness", 100, g_cvarParticleBrightness, error));
     TRY(register_bool("areaEnabled", true, g_cvarAreaEnabled, error));
     TRY(register_bool("taaEnabled", true, g_cvarTaaEnabled, error));
-    TRY(register_int("taaSharpen", 35, g_cvarTaaSharpen, error));
+    TRY(register_int("taaSharpen", 50, g_cvarTaaSharpen, error));
     TRY(register_int("taaFeedback", 10, g_cvarTaaFeedback, error));
     TRY(register_bool("taaDebug", false, g_cvarTaaDebug, error));
     TRY(register_bool("ssgiEnabled", true, g_cvarSsgiEnabled, error));
-    TRY(register_int("ssgiStrength", 100, g_cvarSsgiStrength, error));
+    TRY(register_int("ssgiStrength", 70, g_cvarSsgiStrength, error));
     TRY(register_int("ssgiRadius", 220, g_cvarSsgiRadius, error));
     TRY(register_int("ssgiQuality", 1, g_cvarSsgiQuality, error));
     TRY(register_bool("ssgiDebug", false, g_cvarSsgiDebug, error));
@@ -2751,8 +2779,11 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(register_bool("flareEnabled", true, g_cvarFlareEnabled, error));
     TRY(register_int("flareStrength", 100, g_cvarFlareStrength, error));
     TRY(register_int("grain", 0, g_cvarGrain, error));
-    TRY(register_int("bloom", 70, g_cvarBloom, error));
-    TRY(register_int("bloomThreshold", 55, g_cvarBloomThreshold, error));
+    TRY(register_int("bloom", 40, g_cvarBloom, error));
+    TRY(register_int("bloomThreshold", 70, g_cvarBloomThreshold, error));
+    TRY(register_int("clarity", 45, g_cvarClarity, error));
+    TRY(register_int("characterAmbient", 85, g_cvarCharAmbient, error));
+    TRY(register_int("warmthCompensation", 100, g_cvarWarmComp, error));
     TRY(register_int("lift", 10, g_cvarLift, error));
     TRY(register_bool("keyboardDefaults", true, g_cvarKeyboardDefaults, error));
     TRY(register_bool("lightingEnabled", true, g_cvarLightingEnabled, error));
@@ -2889,7 +2920,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     panel.update = update_panel;
     svc_ui->register_mods_panel(mod_ctx, &panel);
 
-    svc_log->info(mod_ctx, "Sfeerpakket 0.8 geladen (TAA + SSGI)");
+    svc_log->info(mod_ctx, "Sfeerpakket 0.8.1 geladen (scherpere personen)");
     return MOD_OK;
 }
 

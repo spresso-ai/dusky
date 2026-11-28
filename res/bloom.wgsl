@@ -40,7 +40,9 @@ fn down(@builtin(global_invocation_id) gid: vec3u) {
             acc += textureLoad(src, clamp(p, vec2i(0), maxp), 0).rgb;
         }
     }
-    textureStore(dst, vec2i(gid.xy), vec4f(bright_part(acc / 16.0), 1.0));
+    let avg = acc / 16.0;
+    // alpha = helderheid van het hele beeld (zonder drempel): basis voor lokaal contrast
+    textureStore(dst, vec2i(gid.xy), vec4f(bright_part(avg), dot(avg, vec3f(0.2126, 0.7152, 0.0722))));
 }
 
 @compute @workgroup_size(8, 8)
@@ -50,13 +52,13 @@ fn blur(@builtin(global_invocation_id) gid: vec3u) {
     }
     let maxp = vec2i(u.dst_size) - 1;
     let sigma = 6.0;
-    var acc = vec3f(0.0);
+    var acc = vec4f(0.0);
     var wsum = 0.0;
     for (var i = -12; i <= 12; i = i + 1) {
         let w = exp(-f32(i * i) / (2.0 * sigma * sigma));
         let p = clamp(vec2i(gid.xy) + vec2i(u.dir * f32(i)), vec2i(0), maxp);
-        acc += textureLoad(src, p, 0).rgb * w;
+        acc += textureLoad(src, p, 0) * w;
         wsum += w;
     }
-    textureStore(dst, vec2i(gid.xy), vec4f(acc / wsum, 1.0));
+    textureStore(dst, vec2i(gid.xy), acc / wsum);
 }
