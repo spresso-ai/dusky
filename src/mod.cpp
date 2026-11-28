@@ -34,6 +34,7 @@
 #include "d/d_item_data.h"
 #include "d/d_kankyo.h"
 #include "d/d_com_inf_actor.h"
+#include "f_op/f_op_camera_mng.h"
 #include "m_Do/m_Do_controller_pad.h"
 #include "f_op/f_op_actor_mng.h"
 #include "mods/service.hpp"
@@ -83,6 +84,7 @@ DEFINE_HOOK(&dScnKy_env_light_c::setLight, EnvSetLight);
 DEFINE_HOOK_SYMBOL("src/d/actor/d_a_grass.cpp#daGrass_create", int(daGrass_c*), GrassCreate);
 class dMeter2_c;
 DEFINE_HOOK_SYMBOL("src/d/d_meter2.cpp#dMeter2_Draw", int(dMeter2_c*), MeterDraw);
+DEFINE_HOOK_SYMBOL("src/d/d_camera.cpp#camera_draw", int(camera_process_class*), CameraDraw);
 
 namespace {
 
@@ -272,6 +274,15 @@ ConfigVarHandle g_cvarParticlesEnabled = 0;
 ConfigVarHandle g_cvarParticleAmount = 0;
 ConfigVarHandle g_cvarParticleBrightness = 0;
 ConfigVarHandle g_cvarAreaEnabled = 0;
+ConfigVarHandle g_cvarTaaEnabled = 0;
+ConfigVarHandle g_cvarTaaSharpen = 0;
+ConfigVarHandle g_cvarTaaFeedback = 0;
+ConfigVarHandle g_cvarTaaDebug = 0;
+ConfigVarHandle g_cvarSsgiEnabled = 0;
+ConfigVarHandle g_cvarSsgiStrength = 0;
+ConfigVarHandle g_cvarSsgiRadius = 0;
+ConfigVarHandle g_cvarSsgiQuality = 0;
+ConfigVarHandle g_cvarSsgiDebug = 0;
 ConfigVarHandle g_cvarAreaAmount = 0;
 ConfigVarHandle g_cvarAreaIntensity = 0;
 ConfigVarHandle g_cvarPhoto = 0;
@@ -817,6 +828,36 @@ struct ScreenSun {
 ScreenSun g_screenSun;
 
 ResourceBuffer g_bloomSource = RESOURCE_BUFFER_INIT;
+ResourceBuffer g_taaSource = RESOURCE_BUFFER_INIT;
+ResourceBuffer g_taaOutputSource = RESOURCE_BUFFER_INIT;
+ResourceBuffer g_ssgiSource = RESOURCE_BUFFER_INIT;
+ResourceBuffer g_ssgiCompositeSource = RESOURCE_BUFFER_INIT;
+GfxComputeTypeHandle g_genComputeType = 0;
+GfxDrawTypeHandle g_taaOutputDrawType = 0;
+GfxDrawTypeHandle g_ssgiCompositeDrawType = 0;
+
+struct ComputeProgram {
+    WGPUComputePipeline pipeline = nullptr;
+    WGPUBindGroupLayout layout = nullptr;
+    uint32_t texMask = 0;
+    bool sampler = false;
+};
+enum : uint32_t { kProgTaa = 0, kProgSsgi = 1, kProgCount = 2 };
+ComputeProgram g_programs[kProgCount];
+
+// Camerajitter voor TAA (in NDC), gezet in de camera_draw-hook.
+float g_jitterCur[2] = {0, 0};
+float g_jitterPrev[2] = {0, 0};
+uint32_t g_jitterIndex = 0;
+bool g_haveFrameCamera = false;
+CameraInfo g_frameCamera = CAMERA_INFO_INIT;
+float g_prevProjFromWorld[16] = {};
+float g_prevEye[3] = {0, 0, 0};
+bool g_taaHavePrev = false;
+bool g_taaLastPhoto = false;
+uint32_t g_taaHistIndex = 0;
+uint32_t g_viewW = 0;
+uint32_t g_viewH = 0;
 WGPUComputePipeline g_bloomDownPipeline = nullptr;
 WGPUComputePipeline g_bloomBlurPipeline = nullptr;
 WGPUBindGroupLayout g_bloomDownLayout = nullptr;
@@ -828,6 +869,8 @@ struct Diag {
     bool fog = false;
     const char* rays = "-";
     uint32_t particles = 0;
+    bool taa = false;
+    bool gi = false;
     const char* area = "-";
     uint32_t areaCount = 0;
     bool photo = false;
@@ -842,6 +885,8 @@ PipelineSlot g_fogPipeline;
 PipelineSlot g_raysPipeline;
 PipelineSlot g_particlesPipeline;
 PipelineSlot g_areaPipeline;
+PipelineSlot g_taaOutputPipeline;
+PipelineSlot g_ssgiCompositePipeline;
 WGPUComputePipeline g_raysComputePipeline = nullptr;
 WGPUBindGroupLayout g_raysComputeLayout = nullptr;
 
@@ -904,6 +949,69 @@ struct BloomUniforms {
     float knee;
 };
 static_assert(sizeof(BloomUniforms) == 32);
+
+struct TaaUniforms {
+    float world_from_proj[16];
+    float prev_proj_from_world[16];
+    float size[2];
+    float jitter[2];
+    float prev_jitter[2];
+    float reset;
+    float reversed_z;
+    float feedback;
+    float clip_gamma;
+    float _pad[2];
+};
+static_assert(sizeof(TaaUniforms) == 176);
+
+struct TaaOutputUniforms {
+    float size[2];
+    float sharpen;
+    float debug;
+};
+static_assert(sizeof(TaaOutputUniforms) == 16);
+
+struct SsgiUniforms {
+    float view_from_proj[16];
+    float proj_from_view[16];
+    float full_size[2];
+    float half_size[2];
+    float radius;
+    float intensity;
+    float frame;
+    float reversed_z;
+    float sky_depth;
+    float input_is_srgb;
+    float steps;
+    float dirs;
+};
+static_assert(sizeof(SsgiUniforms) == 176);
+
+struct SsgiCompositeUniforms {
+    float view_from_proj[16];
+    float full_size[2];
+    float half_size[2];
+    float strength;
+    float input_is_srgb;
+    float output_srgb;
+    float debug;
+    float shadow_bias;
+    float _pad[3];
+};
+static_assert(sizeof(SsgiCompositeUniforms) == 112);
+
+// Algemene compute-opdracht: textures op binding 0-3 (naar masker), uitvoer op 4,
+// uniform op 5, optioneel een lineaire sampler op 6.
+struct GenComputePayload {
+    WGPUTextureView tex[4];
+    WGPUTextureView out;
+    uint32_t uniform_offset;
+    uint32_t uniform_size;
+    uint32_t width;
+    uint32_t height;
+    uint32_t program;
+};
+static_assert(sizeof(GenComputePayload) <= GFX_INLINE_DRAW_PAYLOAD_SIZE);
 
 struct BloomPayload {
     WGPUTextureView src;
@@ -1261,6 +1369,46 @@ bool build_bloom_pipelines() {
     return g_bloomDownLayout != nullptr && g_bloomBlurLayout != nullptr;
 }
 
+RaysTarget g_taaHist[2];
+RaysTarget g_ssgiTarget;
+
+bool ensure_target(RaysTarget& t, uint32_t w, uint32_t h, const char* label) {
+    if (t.texture != nullptr && t.width == w && t.height == h) {
+        return true;
+    }
+    if (t.texture != nullptr) {
+        g_retiredTargets.push_back({std::exchange(t, RaysTarget{}), 4});
+    }
+    return make_bloom_target(t, w, h, label);
+}
+
+bool build_program(ComputeProgram& prog, const char* label, ResourceBuffer& src, uint32_t texMask,
+    bool sampler) {
+    WGPUShaderModule module = create_shader_module(label, src);
+    if (module == nullptr) {
+        return false;
+    }
+    WGPUComputePipelineDescriptor desc = WGPU_COMPUTE_PIPELINE_DESCRIPTOR_INIT;
+    desc.label = {label, WGPU_STRLEN};
+    desc.compute.module = module;
+    desc.compute.entryPoint = {"main", WGPU_STRLEN};
+    prog.pipeline = wgpuDeviceCreateComputePipeline(g_deviceInfo.device, &desc);
+    wgpuShaderModuleRelease(module);
+    if (prog.pipeline == nullptr) {
+        return false;
+    }
+    prog.layout = wgpuComputePipelineGetBindGroupLayout(prog.pipeline, 0);
+    prog.texMask = texMask;
+    prog.sampler = sampler;
+    return prog.layout != nullptr;
+}
+
+void release_program(ComputeProgram& prog) {
+    if (prog.pipeline) wgpuComputePipelineRelease(prog.pipeline);
+    if (prog.layout) wgpuBindGroupLayoutRelease(prog.layout);
+    prog = ComputeProgram{};
+}
+
 WGPUBindGroupEntry texture_entry(uint32_t binding, WGPUTextureView view) {
     WGPUBindGroupEntry e = WGPU_BIND_GROUP_ENTRY_INIT;
     e.binding = binding;
@@ -1419,6 +1567,246 @@ void on_rays_compute(
     wgpuBindGroupRelease(group);
 }
 
+void on_gen_compute(
+    ModContext*, const GfxComputeContext* ctx, const void* payload, size_t size, void*) {
+    if (size != sizeof(GenComputePayload)) {
+        return;
+    }
+    GenComputePayload data;
+    std::memcpy(&data, payload, sizeof(data));
+    if (data.program >= kProgCount || g_programs[data.program].pipeline == nullptr ||
+        data.out == nullptr) {
+        return;
+    }
+    const ComputeProgram& prog = g_programs[data.program];
+    WGPUBindGroupEntry entries[7];
+    size_t n = 0;
+    for (uint32_t i = 0; i < 4; ++i) {
+        if ((prog.texMask & (1u << i)) != 0) {
+            if (data.tex[i] == nullptr) {
+                return;
+            }
+            entries[n++] = texture_entry(i, data.tex[i]);
+        }
+    }
+    entries[n++] = texture_entry(4, data.out);
+    entries[n++] = uniform_entry(5, ctx->uniform_buffer, data.uniform_offset, data.uniform_size);
+    if (prog.sampler) {
+        WGPUBindGroupEntry e = WGPU_BIND_GROUP_ENTRY_INIT;
+        e.binding = 6;
+        e.sampler = g_linearSampler;
+        entries[n++] = e;
+    }
+    WGPUBindGroup group = make_bind_group(ctx->device, prog.layout, entries, n);
+    if (group == nullptr) {
+        return;
+    }
+    WGPUComputePassDescriptor passDesc = WGPU_COMPUTE_PASS_DESCRIPTOR_INIT;
+    WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(ctx->encoder, &passDesc);
+    wgpuComputePassEncoderSetPipeline(pass, prog.pipeline);
+    wgpuComputePassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+    wgpuComputePassEncoderDispatchWorkgroups(pass, (data.width + 7) / 8, (data.height + 7) / 8, 1);
+    wgpuComputePassEncoderEnd(pass);
+    wgpuComputePassEncoderRelease(pass);
+    wgpuBindGroupRelease(group);
+}
+
+void on_taa_output_draw(
+    ModContext*, const GfxDrawContext* ctx, const void* payload, size_t size, void*) {
+    DrawPayload data;
+    if (read_payload(payload, size, data) && data.view != nullptr &&
+        ensure_pipeline(g_taaOutputPipeline, ctx->layout, "Sfeerpakket taa output",
+            g_taaOutputSource, Blend::Replace, false))
+    {
+        draw_with(ctx, g_taaOutputPipeline, data, 3, 1);
+    }
+}
+
+void on_ssgi_composite_draw(
+    ModContext*, const GfxDrawContext* ctx, const void* payload, size_t size, void*) {
+    DrawPayload data;
+    if (read_payload(payload, size, data) && data.view != nullptr &&
+        ensure_pipeline(g_ssgiCompositePipeline, ctx->layout, "Sfeerpakket ssgi composite",
+            g_ssgiCompositeSource, Blend::Replace, false))
+    {
+        draw_with(ctx, g_ssgiCompositePipeline, data, 3, 1, Extra::SecondView);
+    }
+}
+
+// Halton(2,3): goed verdeelde subpixel-posities, herhaalt na 8 frames.
+float halton(uint32_t i, uint32_t base) {
+    float f = 1.0f, r = 0.0f;
+    while (i > 0) {
+        f /= static_cast<float>(base);
+        r += f * static_cast<float>(i % base);
+        i /= base;
+    }
+    return r;
+}
+
+void on_camera_draw_post(ModContext*, void* args, void*, void*) {
+    if (!get_bool(g_cvarTaaEnabled, true) || g_programs[kProgTaa].pipeline == nullptr ||
+        g_viewW == 0 || g_viewH == 0 || args == nullptr) {
+        g_jitterCur[0] = g_jitterCur[1] = 0.0f;
+        return;
+    }
+    camera_process_class* cam = mods::arg<camera_process_class*>(args, 0);
+    if (cam == nullptr) {
+        return;
+    }
+    const uint32_t i = (g_jitterIndex % 8u) + 1u;
+    const float jx = halton(i, 2) - 0.5f;  // pixels
+    const float jy = halton(i, 3) - 0.5f;
+    const float sx = 2.0f * jx / static_cast<float>(g_viewW);
+    const float sy = 2.0f * jy / static_cast<float>(g_viewH);
+    // ndc.x = p00*x/(-z) - p02: p02 verlagen verschuift het beeld met +s.
+    cam->view.projMtx[0][2] -= sx;
+    cam->view.projMtx[1][2] -= sy;
+    g_jitterCur[0] = sx;
+    g_jitterCur[1] = sy;
+}
+
+bool push_gen(uint32_t program, const void* uniforms, size_t usize, WGPUTextureView t0,
+    WGPUTextureView t1, WGPUTextureView t2, WGPUTextureView out, uint32_t w, uint32_t h) {
+    GfxRange r{0, 0};
+    if (svc_gfx->push_uniform(mod_ctx, uniforms, usize, &r) != MOD_OK) {
+        return false;
+    }
+    const GenComputePayload p{{t0, t1, t2, nullptr}, out, r.offset, r.size, w, h, program};
+    return svc_gfx->push_compute(mod_ctx, g_genComputeType, &p, sizeof(p)) == MOD_OK;
+}
+
+// SSGI: halve-resolutie compute, daarna samenvoegen met de scene (vóór de mist).
+void push_ssgi(const CameraInfo& camera, const GfxResolvedTargets& resolved, float skyDepth) {
+    if (g_programs[kProgSsgi].pipeline == nullptr || resolved.color == nullptr ||
+        resolved.depth == nullptr) {
+        return;
+    }
+    const uint32_t hw = std::max(resolved.width / 2, 1u);
+    const uint32_t hh = std::max(resolved.height / 2, 1u);
+    if (!ensure_target(g_ssgiTarget, hw, hh, "Sfeerpakket ssgi")) {
+        return;
+    }
+    const int quality = static_cast<int>(get_int(g_cvarSsgiQuality, 1));
+    SsgiUniforms u{};
+    std::memcpy(u.view_from_proj, camera.view_from_proj, sizeof(u.view_from_proj));
+    std::memcpy(u.proj_from_view, camera.proj_from_view, sizeof(u.proj_from_view));
+    u.full_size[0] = static_cast<float>(resolved.width);
+    u.full_size[1] = static_cast<float>(resolved.height);
+    u.half_size[0] = static_cast<float>(hw);
+    u.half_size[1] = static_cast<float>(hh);
+    u.radius = static_cast<float>(get_int(g_cvarSsgiRadius, 220));
+    u.intensity = 1.0f;
+    u.frame = static_cast<float>(g_frameCounter % 64u);
+    u.reversed_z = g_deviceInfo.uses_reversed_z ? 1.0f : 0.0f;
+    u.sky_depth = skyDepth;
+    u.input_is_srgb = is_srgb_format(resolved.color_format) ? 1.0f : 0.0f;
+    u.dirs = quality >= 2 ? 6.0f : (quality <= 0 ? 3.0f : 4.0f);
+    u.steps = quality >= 2 ? 10.0f : (quality <= 0 ? 5.0f : 7.0f);
+    if (!push_gen(kProgSsgi, &u, sizeof(u), resolved.color, resolved.depth, nullptr,
+            g_ssgiTarget.view, hw, hh)) {
+        return;
+    }
+    SsgiCompositeUniforms c{};
+    std::memcpy(c.view_from_proj, camera.view_from_proj, sizeof(c.view_from_proj));
+    c.full_size[0] = u.full_size[0];
+    c.full_size[1] = u.full_size[1];
+    c.half_size[0] = u.half_size[0];
+    c.half_size[1] = u.half_size[1];
+    c.strength = get_percent(g_cvarSsgiStrength, 100, 400) * 1.6f;
+    c.input_is_srgb = u.input_is_srgb;
+    c.output_srgb = is_srgb_format(g_deviceInfo.color_format) ? 1.0f : 0.0f;
+    c.debug = get_bool(g_cvarSsgiDebug, false) ? 1.0f : 0.0f;
+    c.shadow_bias = 0.75f;
+    GfxRange r{0, 0};
+    if (svc_gfx->push_uniform(mod_ctx, &c, sizeof(c), &r) != MOD_OK) {
+        return;
+    }
+    const DrawPayload payload{resolved.color, resolved.depth, g_ssgiTarget.view, r.offset, r.size, 1};
+    if (svc_gfx->push_draw(mod_ctx, g_ssgiCompositeDrawType, &payload, sizeof(payload)) == MOD_OK) {
+        g_diag.gi = true;
+    }
+}
+
+bool photo_active();
+
+// TAA: laatste pass vóór de HUD.
+void push_taa() {
+    g_diag.taa = false;
+    const bool on = get_bool(g_cvarTaaEnabled, true);
+    if (!on || g_programs[kProgTaa].pipeline == nullptr || !g_haveFrameCamera) {
+        g_taaHavePrev = false;
+        std::memcpy(g_jitterPrev, g_jitterCur, sizeof(g_jitterPrev));
+        return;
+    }
+    GfxResolveDesc rd = GFX_RESOLVE_DESC_INIT;
+    rd.color = true;
+    rd.depth = true;
+    GfxResolvedTargets resolved = GFX_RESOLVED_TARGETS_INIT;
+    if (svc_gfx->resolve_pass(mod_ctx, &rd, &resolved) != MOD_OK || resolved.color == nullptr ||
+        resolved.depth == nullptr || resolved.width == 0 || resolved.height == 0)
+    {
+        return;
+    }
+    g_viewW = resolved.width;
+    g_viewH = resolved.height;
+    bool reset = !g_taaHavePrev;
+    for (auto& t : g_taaHist) {
+        if (t.width != resolved.width || t.height != resolved.height) {
+            reset = true;
+        }
+        if (!ensure_target(t, resolved.width, resolved.height, "Sfeerpakket taa")) {
+            return;
+        }
+    }
+    const CameraInfo& cam = g_frameCamera;
+    const float dx = cam.eye[0] - g_prevEye[0];
+    const float dy = cam.eye[1] - g_prevEye[1];
+    const float dz = cam.eye[2] - g_prevEye[2];
+    if (dx * dx + dy * dy + dz * dz > 400.0f * 400.0f || g_taaLastPhoto != photo_active()) {
+        reset = true;  // camerasprong of wissel van/naar fotomodus
+    }
+    TaaUniforms u{};
+    std::memcpy(u.world_from_proj, cam.world_from_proj, sizeof(u.world_from_proj));
+    std::memcpy(u.prev_proj_from_world, reset ? cam.proj_from_world : g_prevProjFromWorld,
+        sizeof(u.prev_proj_from_world));
+    u.size[0] = static_cast<float>(resolved.width);
+    u.size[1] = static_cast<float>(resolved.height);
+    u.jitter[0] = g_jitterCur[0];
+    u.jitter[1] = g_jitterCur[1];
+    u.prev_jitter[0] = g_jitterPrev[0];
+    u.prev_jitter[1] = g_jitterPrev[1];
+    u.reset = reset ? 1.0f : 0.0f;
+    u.reversed_z = g_deviceInfo.uses_reversed_z ? 1.0f : 0.0f;
+    u.feedback = std::clamp(get_percent(g_cvarTaaFeedback, 10, 100), 0.03f, 1.0f);
+    u.clip_gamma = 1.25f;
+    RaysTarget& prev = g_taaHist[g_taaHistIndex];
+    RaysTarget& next = g_taaHist[g_taaHistIndex ^ 1u];
+    if (!push_gen(kProgTaa, &u, sizeof(u), resolved.color, resolved.depth, prev.view, next.view,
+            resolved.width, resolved.height)) {
+        return;
+    }
+    TaaOutputUniforms o{};
+    o.size[0] = u.size[0];
+    o.size[1] = u.size[1];
+    o.sharpen = get_percent(g_cvarTaaSharpen, 35, 100);
+    o.debug = get_bool(g_cvarTaaDebug, false) ? 1.0f : 0.0f;
+    GfxRange r{0, 0};
+    if (svc_gfx->push_uniform(mod_ctx, &o, sizeof(o), &r) != MOD_OK) {
+        return;
+    }
+    const DrawPayload payload{next.view, nullptr, nullptr, r.offset, r.size, 1};
+    if (svc_gfx->push_draw(mod_ctx, g_taaOutputDrawType, &payload, sizeof(payload)) == MOD_OK) {
+        g_diag.taa = true;
+    }
+    g_taaHistIndex ^= 1u;
+    std::memcpy(g_prevProjFromWorld, cam.proj_from_world, sizeof(g_prevProjFromWorld));
+    std::memcpy(g_prevEye, cam.eye, sizeof(g_prevEye));
+    std::memcpy(g_jitterPrev, g_jitterCur, sizeof(g_jitterPrev));
+    g_taaHavePrev = true;
+    g_taaLastPhoto = photo_active();
+}
+
 void on_bloom_compute(
     ModContext*, const GfxComputeContext* ctx, const void* payload, size_t size, void*) {
     if (size != sizeof(BloomPayload)) {
@@ -1483,12 +1871,22 @@ void push_fxaa() {
     svc_gfx->push_draw(mod_ctx, g_fxaaDrawType, &payload, sizeof(payload));
 }
 
+void frame_grade_and_fxaa();
+void push_taa();
+
 void on_frame_before_hud(ModContext*, const GfxStageContext*, void*) {
     ++g_frameCounter;
+    frame_grade_and_fxaa();
+    push_taa();
+    ++g_jitterIndex;
+    g_haveFrameCamera = false;
+}
+
+void frame_grade_and_fxaa() {
     // 1. Anti-aliasing: schrijft over de scene; de volgende opname ziet het resultaat.
     g_diag.aa = false;
     g_diag.grade = false;
-    if (get_bool(g_cvarAaEnabled, true)) {
+    if (get_bool(g_cvarAaEnabled, true) && !get_bool(g_cvarTaaEnabled, true)) {
         push_fxaa();
         g_diag.aa = true;
     }
@@ -1905,7 +2303,8 @@ void on_scene_after_opaque(ModContext*, const GfxStageContext* stageCtx, void*) 
     const bool raysOn = get_bool(g_cvarRaysEnabled, true);
     const bool particlesOn = get_bool(g_cvarParticlesEnabled, true);
     const bool areaOn = get_bool(g_cvarAreaEnabled, true);
-    if ((!fogOn && !raysOn && !particlesOn && !areaOn) || stageCtx == nullptr ||
+    if ((!fogOn && !raysOn && !particlesOn && !areaOn && !get_bool(g_cvarSsgiEnabled, true) &&
+            !get_bool(g_cvarTaaEnabled, true)) || stageCtx == nullptr ||
         stageCtx->struct_size < sizeof(GfxStageContext) || stageCtx->game_view == nullptr)
     {
         return;
@@ -1920,16 +2319,25 @@ void on_scene_after_opaque(ModContext*, const GfxStageContext* stageCtx, void*) 
     }
     const SunState sun = compute_sun();
     update_screen_sun(camera, sun);
+    g_frameCamera = camera;
+    g_haveFrameCamera = true;
+    g_diag.gi = false;
+    const bool ssgiOn = get_bool(g_cvarSsgiEnabled, true);
 
-    if (fogOn || raysOn) {
+    if (fogOn || raysOn || ssgiOn) {
         GfxResolveDesc resolveDesc = GFX_RESOLVE_DESC_INIT;
-        resolveDesc.color = false;
+        resolveDesc.color = ssgiOn;
         resolveDesc.depth = true;
         GfxResolvedTargets resolved = GFX_RESOLVED_TARGETS_INIT;
         if (svc_gfx->resolve_pass(mod_ctx, &resolveDesc, &resolved) == MOD_OK &&
             resolved.depth != nullptr)
         {
             const float skyDepth = sky_depth_threshold(camera, g_deviceInfo.uses_reversed_z);
+            g_viewW = resolved.width;
+            g_viewH = resolved.height;
+            if (ssgiOn) {
+                push_ssgi(camera, resolved, skyDepth);
+            }
             if (fogOn) {
                 push_fog(camera, resolved, env, sun, skyDepth);
             }
@@ -1970,6 +2378,7 @@ struct PhotoState {
     float lastMouse[2] = {-1.0f, -1.0f};
 };
 PhotoState g_photo;
+bool photo_active() { return g_photo.active; }
 
 constexpr int kScP = 19, kScW = 26, kScA = 4, kScS = 22, kScD = 7, kScSpace = 44, kScLCtrl = 224,
               kScLShift = 225, kScQ = 20, kScE = 8;
@@ -2168,6 +2577,19 @@ ModResult build_panel(ModContext*, UiElementHandle panel, void*, ModError*) {
     add_number(panel, "Hoeveelheid", g_cvarParticleAmount, 0, 300, 10);
     add_number(panel, "Helderheid", g_cvarParticleBrightness, 0, 300, 10);
 
+    svc_ui->pane_add_section(mod_ctx, panel, "Teruggekaatst licht (SSGI)");
+    add_toggle(panel, "Aan", g_cvarSsgiEnabled);
+    add_number(panel, "Sterkte", g_cvarSsgiStrength, 0, 400, 10);
+    add_number(panel, "Bereik", g_cvarSsgiRadius, 50, 600, 10, "");
+    add_number(panel, "Kwaliteit (0-2)", g_cvarSsgiQuality, 0, 2, 1, "");
+    add_toggle(panel, "Toon alleen teruggekaatst licht (debug)", g_cvarSsgiDebug);
+
+    svc_ui->pane_add_section(mod_ctx, panel, "Temporele anti-aliasing (TAA)");
+    add_toggle(panel, "Aan (vervangt FXAA)", g_cvarTaaEnabled);
+    add_number(panel, "Verscherping", g_cvarTaaSharpen, 0, 100, 5);
+    add_number(panel, "Nieuw frame-gewicht (lager = rustiger, meer naslepen)", g_cvarTaaFeedback, 3, 50, 1);
+    add_toggle(panel, "Vergelijk: linkerhelft zonder verscherping", g_cvarTaaDebug);
+
     svc_ui->pane_add_section(mod_ctx, panel, "Deeltjes per gebied");
     add_toggle(panel, "Aan (bladeren, bloemblaadjes, vonken, sneeuw, zand, schemer)", g_cvarAreaEnabled);
     add_number(panel, "Hoeveelheid", g_cvarAreaAmount, 0, 300, 10);
@@ -2217,10 +2639,10 @@ ModResult update_panel(ModContext*, void*, ModError*) {
     if (g_diagText != 0) {
         char text[320];
         std::snprintf(text, sizeof(text),
-            "Mist: %s | Stralen: %s | Deeltjes: %u + %s %u | Gloed: %s | AA: %s | Kleur: %s | Diepte: %s%s",
-            g_diag.fog ? "aan" : "uit", g_diag.rays, g_diag.particles, g_diag.area, g_diag.areaCount,
+            "GI: %s | Mist: %s | Stralen: %s | Deeltjes: %u + %s %u | Gloed: %s | AA: %s | Kleur: %s | Diepte: %s%s",
+            g_diag.gi ? "aan" : "uit", g_diag.fog ? "aan" : "uit", g_diag.rays, g_diag.particles, g_diag.area, g_diag.areaCount,
             g_diag.bloom ? "aan" : "uit",
-            g_diag.aa ? "aan" : "uit", g_diag.grade ? "aan" : "uit", g_diag.depth ? "ja" : "nee", g_diag.photo ? " | FOTOMODUS" : "");
+            g_diag.taa ? "TAA" : (g_diag.aa ? "FXAA" : "uit"), g_diag.grade ? "aan" : "uit", g_diag.depth ? "ja" : "nee", g_diag.photo ? " | FOTOMODUS" : "");
         svc_ui->elem_set_text(mod_ctx, g_diagText, text);
     }
     if (g_dumpText != 0) {
@@ -2301,6 +2723,15 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(register_int("particleAmount", 100, g_cvarParticleAmount, error));
     TRY(register_int("particleBrightness", 100, g_cvarParticleBrightness, error));
     TRY(register_bool("areaEnabled", true, g_cvarAreaEnabled, error));
+    TRY(register_bool("taaEnabled", true, g_cvarTaaEnabled, error));
+    TRY(register_int("taaSharpen", 35, g_cvarTaaSharpen, error));
+    TRY(register_int("taaFeedback", 10, g_cvarTaaFeedback, error));
+    TRY(register_bool("taaDebug", false, g_cvarTaaDebug, error));
+    TRY(register_bool("ssgiEnabled", true, g_cvarSsgiEnabled, error));
+    TRY(register_int("ssgiStrength", 100, g_cvarSsgiStrength, error));
+    TRY(register_int("ssgiRadius", 220, g_cvarSsgiRadius, error));
+    TRY(register_int("ssgiQuality", 1, g_cvarSsgiQuality, error));
+    TRY(register_bool("ssgiDebug", false, g_cvarSsgiDebug, error));
     TRY(register_int("areaAmount", 100, g_cvarAreaAmount, error));
     TRY(register_int("areaIntensity", 100, g_cvarAreaIntensity, error));
     TRY(register_bool("photoMode", false, g_cvarPhoto, error));
@@ -2331,6 +2762,10 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(load_shader("grade.wgsl", g_gradeSource, error));
     TRY(load_shader("fxaa.wgsl", g_fxaaSource, error));
     TRY(load_shader("bloom.wgsl", g_bloomSource, error));
+    TRY(load_shader("taa.wgsl", g_taaSource, error));
+    TRY(load_shader("taa_output.wgsl", g_taaOutputSource, error));
+    TRY(load_shader("ssgi.wgsl", g_ssgiSource, error));
+    TRY(load_shader("ssgi_composite.wgsl", g_ssgiCompositeSource, error));
     TRY(load_shader("fog.wgsl", g_fogSource, error));
     TRY(load_shader("rays_compute.wgsl", g_raysComputeSource, error));
     TRY(load_shader("rays_composite.wgsl", g_raysCompositeSource, error));
@@ -2350,6 +2785,12 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
             return mods::set_error(error, MOD_ERROR, "kon sampler niet maken");
         }
     }
+    if (!build_program(g_programs[kProgTaa], "Sfeerpakket taa", g_taaSource, 0b0111, true)) {
+        svc_log->warn(mod_ctx, "TAA-pipeline niet beschikbaar; FXAA blijft");
+    }
+    if (!build_program(g_programs[kProgSsgi], "Sfeerpakket ssgi", g_ssgiSource, 0b0011, false)) {
+        svc_log->warn(mod_ctx, "SSGI-pipeline niet beschikbaar");
+    }
     if (!build_bloom_pipelines()) {
         svc_log->warn(mod_ctx, "bloom-pipelines niet beschikbaar; gloed staat uit");
     }
@@ -2363,9 +2804,17 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     TRY(register_draw("Sfeerpakket rays", on_rays_draw, g_raysDrawType, error));
     TRY(register_draw("Sfeerpakket particles", on_particles_draw, g_particlesDrawType, error));
     TRY(register_draw("Sfeerpakket area particles", on_area_draw, g_areaDrawType, error));
+    TRY(register_draw("Sfeerpakket taa output", on_taa_output_draw, g_taaOutputDrawType, error));
+    TRY(register_draw("Sfeerpakket ssgi composite", on_ssgi_composite_draw, g_ssgiCompositeDrawType, error));
 #undef TRY
 
     {
+        GfxComputeTypeDesc genDesc = GFX_COMPUTE_TYPE_DESC_INIT;
+        genDesc.label = "Sfeerpakket compute";
+        genDesc.callback = on_gen_compute;
+        if (svc_gfx->register_compute_type(mod_ctx, &genDesc, &g_genComputeType) != MOD_OK) {
+            return mods::set_error(error, MOD_ERROR, "kon compute type niet registreren");
+        }
         GfxComputeTypeDesc bloomDesc = GFX_COMPUTE_TYPE_DESC_INIT;
         bloomDesc.label = "Sfeerpakket bloom";
         bloomDesc.callback = on_bloom_compute;
@@ -2406,6 +2855,9 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
         svc_log->warn(mod_ctx, "gras-hook niet beschikbaar; extra gras staat uit");
     }
 
+    if (mods::hook::add_post<CameraDraw>(on_camera_draw_post) != MOD_OK) {
+        svc_log->warn(mod_ctx, "camera-hook niet beschikbaar; TAA werkt zonder subpixel-jitter");
+    }
     if (mods::hook::add_pre<MeterDraw>(on_meter_draw_pre) != MOD_OK) {
         svc_log->warn(mod_ctx, "HUD-hook niet beschikbaar; HUD blijft zichtbaar in fotomodus");
     }
@@ -2437,7 +2889,7 @@ MOD_EXPORT ModResult mod_initialize(ModError* error) {
     panel.update = update_panel;
     svc_ui->register_mods_panel(mod_ctx, &panel);
 
-    svc_log->info(mod_ctx, "Sfeerpakket 0.7 geladen (gebiedsdeeltjes + fotomodus)");
+    svc_log->info(mod_ctx, "Sfeerpakket 0.8 geladen (TAA + SSGI)");
     return MOD_OK;
 }
 
@@ -2477,6 +2929,18 @@ MOD_EXPORT ModResult mod_shutdown(ModError*) {
         g_photoOperator = 0;
     }
     release_slot(g_areaPipeline);
+    release_slot(g_taaOutputPipeline);
+    release_slot(g_ssgiCompositePipeline);
+    for (auto& prog : g_programs) {
+        release_program(prog);
+    }
+    release_rays_target(g_taaHist[0]);
+    release_rays_target(g_taaHist[1]);
+    release_rays_target(g_ssgiTarget);
+    svc_resource->free(mod_ctx, &g_taaSource);
+    svc_resource->free(mod_ctx, &g_taaOutputSource);
+    svc_resource->free(mod_ctx, &g_ssgiSource);
+    svc_resource->free(mod_ctx, &g_ssgiCompositeSource);
     svc_resource->free(mod_ctx, &g_areaSource);
     if (g_bloomDownPipeline) wgpuComputePipelineRelease(g_bloomDownPipeline);
     if (g_bloomBlurPipeline) wgpuComputePipelineRelease(g_bloomBlurPipeline);
